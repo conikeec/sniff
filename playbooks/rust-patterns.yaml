@@ -1,6 +1,6 @@
 name: "Rust Bullshit Detection Patterns"
 version: "1.0.0"
-language: "Rust"
+language: "rust"
 author: "Sniff Core Team"
 description: "Comprehensive bullshit detection patterns for Rust code"
 
@@ -9,9 +9,8 @@ rules:
     name: "Unimplemented Macro"
     description: "Function uses unimplemented!() macro"
     severity: "Critical"
-    pattern_type:
-      Regex:
-        pattern: "unimplemented!\\(\\)"
+    pattern_type: !Regex
+      pattern: "unimplemented!\\(\\)"
     scope: "FunctionBody"
     enabled: true
     tags: ["placeholder", "incomplete"]
@@ -24,10 +23,9 @@ rules:
     name: "TODO Comment"
     description: "TODO, FIXME, or XXX comment in code"
     severity: "Medium"
-    pattern_type:
-      Regex:
-        pattern: "(?i)//\\s*(TODO|FIXME|XXX|HACK):"
-        flags: "i"
+    pattern_type: !Regex
+      pattern: "(?i)//\\s*(TODO|FIXME|XXX|HACK):"
+      flags: "i"
     scope: "Comments"
     enabled: true
     tags: ["todo", "incomplete"]
@@ -38,29 +36,29 @@ rules:
     false_positives:
       - "// TODO: This is in documentation"
 
-  - id: "rust_panic_with_todo"
-    name: "Panic with TODO"
-    description: "Function panics with TODO-related message"
-    severity: "High"
-    pattern_type:
-      Regex:
-        pattern: "panic!\\s*\\(\\s*\"[^\"]*(?:TODO|FIXME|XXX|placeholder|not implemented)[^\"]*\"\\s*\\)"
-        flags: "i"
-    scope: "FunctionBody"
+  - id: "rust_shortcut_comments"
+    name: "AI Shortcut Comments"
+    description: "Comments indicating AI took shortcuts or temporary solutions"
+    severity: "Medium"
+    pattern_type: !Regex
+      pattern: "(?i)//\\s*(?:for now|temporary|quick fix|hack|workaround|temporary solution|quick and dirty|placeholder|stub|mock|dummy|just for now|temp|tmp)"
+      flags: "i"
+    scope: "Comments"
     enabled: true
-    tags: ["panic", "placeholder"]
+    tags: ["shortcuts", "temporary", "ai_patterns"]
     examples:
-      - "panic!(\"TODO: implement this\")"
-      - "panic!(\"Not implemented yet\")"
+      - "// For now, just return 0"
+      - "// Temporary solution until we implement X"
+      - "// Quick fix - needs proper implementation"
+      - "// Workaround for issue #123"
     false_positives: []
 
   - id: "rust_unwrap_without_context"
     name: "Unwrap Without Context"
     description: "Using unwrap() without proper error handling context"
     severity: "Medium"
-    pattern_type:
-      Regex:
-        pattern: "\\.unwrap\\(\\)"
+    pattern_type: !Regex
+      pattern: "\\.unwrap\\(\\)"
     scope: "FunctionBody"
     enabled: true
     tags: ["error_handling", "unwrap"]
@@ -70,68 +68,49 @@ rules:
     false_positives:
       - "let value = result.unwrap(); // Safe: validated above"
 
-  - id: "rust_expect_with_placeholder"
-    name: "Expect with Placeholder"
-    description: "Using expect() with placeholder or TODO message"
-    severity: "High"
-    pattern_type:
-      Regex:
-        pattern: "\\.expect\\(\\s*\"[^\"]*(?:TODO|FIXME|placeholder|not implemented)[^\"]*\"\\s*\\)"
-        flags: "i"
+  - id: "rust_hardcoded_values"
+    name: "Hardcoded Placeholder Values"
+    description: "Hardcoded values with placeholder comments"
+    severity: "Medium"
+    pattern_type: !Regex
+      pattern: "(?:=|return)\\s*(?:0|1|42|999|\"test\"|\"placeholder\"|\"dummy\")\\s*[;,]?\\s*//.*(?i)(?:for now|temporary|placeholder|dummy|mock|hardcoded)"
+      flags: "i"
     scope: "FunctionBody"
     enabled: true
-    tags: ["expect", "placeholder"]
+    tags: ["hardcoded", "placeholder"]
     examples:
-      - "result.expect(\"TODO: handle this error\")"
-      - "value.expect(\"placeholder message\")"
+      - "return 42; // For now"
+      - "let value = 0; // Temporary placeholder"
+      - "const DEFAULT = \"dummy\"; // Hardcoded for now"
     false_positives: []
 
-  - id: "rust_empty_function_body"
-    name: "Empty Function Body"
-    description: "Function has completely empty body"
-    severity: "High"
-    pattern_type:
-      AstQuery:
-        query: |
-          (function_item
-            name: (identifier) @func_name
-            body: (block) @body
-            (#eq? @body ""))
+  - id: "rust_magic_numbers"
+    name: "Magic Numbers with Comments"
+    description: "Magic numbers with explanatory comments indicating temporary use"
+    severity: "Low"
+    pattern_type: !Regex
+      pattern: "(?:=|return|\\+|\\-|\\*|/)\\s*(?:42|69|123|456|789|999|1000|9999)\\s*[;,)]?\\s*//.*(?i)(?:magic|arbitrary|random|for now|temporary)"
+      flags: "i"
     scope: "FunctionBody"
     enabled: true
-    tags: ["empty", "incomplete"]
+    tags: ["magic_numbers", "temporary"]
     examples:
-      - "fn do_something() {}"
-    false_positives:
-      - "fn marker_function() {} // Intentionally empty marker"
-
-  - id: "rust_todo_panic"
-    name: "TODO Panic"
-    description: "Function panics with generic TODO message"
-    severity: "Critical"
-    pattern_type:
-      Regex:
-        pattern: "todo!\\(\\)"
-    scope: "FunctionBody"
-    enabled: true
-    tags: ["todo", "panic"]
-    examples:
-      - "fn incomplete() { todo!() }"
+      - "let size = 42; // Magic number for now"
+      - "return 999; // Arbitrary value"
     false_positives: []
 
-  - id: "rust_unreachable_as_placeholder"
-    name: "Unreachable as Placeholder"
-    description: "Using unreachable!() as a placeholder in reachable code"
-    severity: "High"
-    pattern_type:
-      Regex:
-        pattern: "unreachable!\\(\\s*\"[^\"]*(?:TODO|FIXME|placeholder)[^\"]*\"\\s*\\)"
-        flags: "i"
+  - id: "rust_dbg_macro_left_in"
+    name: "Debug Macro Left In Code"
+    description: "dbg! macro left in production code"
+    severity: "Medium"
+    pattern_type: !Regex
+      pattern: "dbg!\\s*\\([^)]+\\)"
     scope: "FunctionBody"
     enabled: true
-    tags: ["unreachable", "placeholder"]
+    tags: ["debug", "production"]
     examples:
-      - "unreachable!(\"TODO: implement this branch\")"
+      - "dbg!(variable);"
+      - "let result = dbg!(computation());"
     false_positives: []
 
 metadata:

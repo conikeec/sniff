@@ -23,7 +23,10 @@
       "Bash(rm:*)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(./target/debug/test_analyzer)"
+      "Bash(./target/debug/test_analyzer)",
+      "Bash(rustc:*)",
+      "Bash(./test_enhanced_patterns)",
+      "Bash(./test_learned_analyzer)"
     ],
     "deny": []
   }

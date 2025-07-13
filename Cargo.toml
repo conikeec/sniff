@@ -60,6 +60,9 @@ comfy-table = "7.1"
 # YAML for playbook definitions
 serde_yaml = "0.9"
 
+# UUID generation for pattern IDs
+uuid = { version = "1.6", features = ["v4", "serde"] }
+
 [dev-dependencies]
 tempfile = "3.8"
 tokio-test = "0.4"

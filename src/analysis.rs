@@ -950,6 +950,52 @@ impl BullshitAnalyzer {
         })
     }
 
+    /// Creates a new bullshit analyzer without default playbooks.
+    /// This is useful when you want to load only enhanced/custom playbooks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the codebase analyzer fails to initialize.
+    pub fn new_without_defaults() -> Result<Self> {
+        let codebase_analyzer = CodebaseAnalyzer::new().map_err(|e| {
+            SniffError::analysis_error(format!("Failed to create codebase analyzer: {e}"))
+        })?;
+
+        let ai_config = AIConfig {
+            detailed_explanations: true,
+            include_examples: true,
+            max_explanation_length: 1000,
+            pattern_recognition: true,
+            architectural_insights: true,
+        };
+        let ai_analyzer = AIAnalyzer::with_config(ai_config);
+
+        // Initialize analyzers (these will be created per-language when needed)
+        let complexity_analyzer = ComplexityAnalyzer::new("");
+        let semantic_analyzer = SemanticContextAnalyzer::new(Language::Rust).map_err(|e| {
+            SniffError::analysis_error(format!("Failed to create semantic analyzer: {e}"))
+        })?;
+        let performance_analyzer = PerformanceAnalyzer::new();
+
+        // Parser will be created per-language when needed
+        let parser = None;
+
+        // Create empty playbook manager - no default playbooks loaded
+        let playbook_manager = PlaybookManager::new();
+
+        Ok(Self {
+            codebase_analyzer,
+            ai_analyzer,
+            complexity_analyzer,
+            semantic_analyzer,
+            performance_analyzer,
+            parser,
+            playbook_manager,
+            compiled_patterns: HashMap::new(),
+            test_classifier: TestFileClassifier::new(),
+        })
+    }
+
     /// Loads playbooks from a directory.
     ///
     /// # Errors
@@ -957,6 +1003,53 @@ impl BullshitAnalyzer {
     /// Returns an error if the directory cannot be read or playbooks are invalid.
     pub fn load_playbooks(&mut self, playbook_dir: &Path) -> Result<()> {
         self.playbook_manager.load_playbooks_from_dir(playbook_dir)
+    }
+
+    /// Loads learned patterns from .sniff folder and integrates them with playbooks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the .sniff folder cannot be accessed or patterns are invalid.
+    pub fn load_learned_patterns(&mut self, base_path: &Path) -> Result<()> {
+        let pattern_manager = crate::pattern_learning::PatternLearningManager::new(base_path)?;
+        
+        // Convert learned patterns to playbooks and add them
+        let languages = [
+            SupportedLanguage::Rust,
+            SupportedLanguage::Python,
+            SupportedLanguage::TypeScript,
+            SupportedLanguage::JavaScript,
+            SupportedLanguage::Go,
+            SupportedLanguage::C,
+            SupportedLanguage::Cpp,
+        ];
+
+        for language in &languages {
+            if let Some(learned_playbook) = pattern_manager.to_playbook(*language) {
+                self.playbook_manager.add_playbook(*language, learned_playbook);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Creates a new bullshit analyzer with learned patterns from .sniff folder.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the analyzer fails to initialize or learned patterns cannot be loaded.
+    pub fn new_with_learned_patterns<P: AsRef<Path>>(base_path: P) -> Result<Self> {
+        let mut analyzer = Self::new_without_defaults()?;
+        
+        // Try to load learned patterns first
+        if let Err(e) = analyzer.load_learned_patterns(base_path.as_ref()) {
+            // If learned patterns fail to load, fall back to defaults
+            eprintln!("Warning: Failed to load learned patterns: {}", e);
+            eprintln!("Falling back to default patterns");
+            return Self::new();
+        }
+
+        Ok(analyzer)
     }
 
     /// Detects the language of a file using rust-treesitter-agent-code-utility.

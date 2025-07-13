@@ -129,10 +129,59 @@ enum Commands {
         detailed: bool,
     },
 
+    /// Analyze arbitrary files for bullshit patterns (independent of Claude Code)
+    AnalyzeFiles {
+        /// Files or directories to analyze
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+        /// Output format
+        #[arg(short, long, default_value = "table")]
+        format: OutputFormat,
+        /// Show detailed pattern analysis
+        #[arg(short, long)]
+        detailed: bool,
+        /// Include hidden files and directories
+        #[arg(long)]
+        include_hidden: bool,
+        /// File extensions to include (e.g., rs,py,ts)
+        #[arg(long)]
+        extensions: Option<String>,
+        /// Pattern to exclude files (glob pattern)
+        #[arg(long)]
+        exclude: Option<String>,
+        /// Maximum file size to analyze (in MB)
+        #[arg(long, default_value = "10")]
+        max_file_size_mb: f64,
+        /// Language to force for all files (overrides detection)
+        #[arg(long)]
+        force_language: Option<String>,
+        /// Save analysis results to file
+        #[arg(long)]
+        output_file: Option<PathBuf>,
+        /// Create checkpoint for tracking changes
+        #[arg(long)]
+        checkpoint: Option<String>,
+        /// Compare against previous checkpoint
+        #[arg(long)]
+        diff_checkpoint: Option<String>,
+    },
+
+    /// Manage analysis checkpoints for tracking changes over time
+    Checkpoint {
+        #[command(subcommand)]
+        command: CheckpointCommands,
+    },
+
     /// Database maintenance operations
     Db {
         #[command(subcommand)]
         command: DbCommands,
+    },
+
+    /// Manage learned patterns for dynamic bullshit detection
+    Patterns {
+        #[command(subcommand)]
+        command: PatternCommands,
     },
 
     /// Legacy commands (for backward compatibility)
@@ -169,6 +218,142 @@ enum DbCommands {
         /// Export specific project only
         #[arg(short, long)]
         project: Option<String>,
+    },
+}
+
+/// Checkpoint management commands
+#[derive(Subcommand)]
+enum CheckpointCommands {
+    /// Create a new checkpoint with current file states
+    Create {
+        /// Checkpoint name
+        #[arg(short, long)]
+        name: String,
+        /// Files or directories to checkpoint
+        paths: Vec<PathBuf>,
+        /// Description of the checkpoint
+        #[arg(short, long)]
+        description: Option<String>,
+    },
+    /// List available checkpoints
+    List {
+        /// Output format
+        #[arg(short, long, default_value = "table")]
+        format: OutputFormat,
+    },
+    /// Show detailed information about a checkpoint
+    Show {
+        /// Checkpoint name
+        name: String,
+        /// Output format
+        #[arg(short, long, default_value = "table")]
+        format: OutputFormat,
+    },
+    /// Compare current state against a checkpoint
+    Diff {
+        /// Checkpoint name to compare against
+        checkpoint: String,
+        /// Paths to compare (optional, uses checkpoint paths if not provided)
+        paths: Option<Vec<PathBuf>>,
+        /// Output format
+        #[arg(short, long, default_value = "table")]
+        format: OutputFormat,
+    },
+    /// Delete a checkpoint
+    Delete {
+        /// Checkpoint name
+        name: String,
+        /// Confirm the deletion
+        #[arg(long)]
+        confirm: bool,
+    },
+}
+
+/// Pattern management commands
+#[derive(Subcommand)]
+enum PatternCommands {
+    /// Create a new learned pattern
+    Create {
+        /// Programming language for the pattern
+        #[arg(short, long)]
+        language: String,
+        /// Pattern name
+        #[arg(short, long)]
+        name: String,
+        /// Pattern description
+        #[arg(short, long)]
+        description: String,
+        /// Regex pattern to match
+        #[arg(short, long)]
+        pattern: String,
+        /// Pattern severity (info, low, medium, high, critical)
+        #[arg(short, long, default_value = "medium")]
+        severity: String,
+        /// Pattern scope (file, function_body, class_body, comments, method_signature)
+        #[arg(long, default_value = "function_body")]
+        scope: String,
+        /// Optional regex flags
+        #[arg(long)]
+        flags: Option<String>,
+        /// Confidence in this pattern (0.0-1.0)
+        #[arg(short, long, default_value = "0.8")]
+        confidence: f64,
+        /// Tags for categorization (comma-separated)
+        #[arg(short, long)]
+        tags: Option<String>,
+        /// Example code that should trigger this pattern
+        #[arg(long)]
+        examples: Vec<String>,
+        /// Example code that should NOT trigger this pattern
+        #[arg(long)]
+        false_positives: Vec<String>,
+    },
+    /// List learned patterns
+    List {
+        /// Filter by programming language
+        #[arg(short, long)]
+        language: Option<String>,
+        /// Output format
+        #[arg(short, long, default_value = "table")]
+        format: OutputFormat,
+        /// Show only active patterns
+        #[arg(short, long)]
+        active_only: bool,
+    },
+    /// Show pattern statistics
+    Stats {
+        /// Output format
+        #[arg(short, long, default_value = "table")]
+        format: OutputFormat,
+    },
+    /// Delete a learned pattern
+    Delete {
+        /// Pattern ID to delete
+        pattern_id: String,
+        /// Confirm the deletion
+        #[arg(long)]
+        confirm: bool,
+    },
+    /// Initialize .sniff folder structure
+    Init {
+        /// Force initialization even if .sniff already exists
+        #[arg(short, long)]
+        force: bool,
+    },
+    /// Export learned patterns to YAML
+    Export {
+        /// Programming language to export
+        #[arg(short, long)]
+        language: String,
+        /// Output file path
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+    /// Validate existing learned patterns
+    Validate {
+        /// Fix invalid patterns automatically
+        #[arg(long)]
+        fix: bool,
     },
 }
 
@@ -237,7 +422,37 @@ async fn main() -> Result<()> {
             detailed,
         } => handle_analyze_command(projects_path, session, project, format, detailed).await,
 
+        Commands::AnalyzeFiles {
+            paths,
+            format,
+            detailed,
+            include_hidden,
+            extensions,
+            exclude,
+            max_file_size_mb,
+            force_language,
+            output_file,
+            checkpoint,
+            diff_checkpoint,
+        } => handle_analyze_files_command(
+            paths,
+            format,
+            detailed,
+            include_hidden,
+            extensions,
+            exclude,
+            max_file_size_mb,
+            force_language,
+            output_file,
+            checkpoint,
+            diff_checkpoint,
+        ).await,
+
+        Commands::Checkpoint { command } => handle_checkpoint_command(command).await,
+
         Commands::Db { command } => handle_db_command(database_path, command).await,
+
+        Commands::Patterns { command } => handle_patterns_command(command).await,
 
         // Legacy command for backward compatibility
         Commands::Parse {
@@ -1445,4 +1660,710 @@ fn display_compact_format(analyses: &[SimpleSessionAnalysis]) {
             analysis.metrics.quality_score
         );
     }
+}
+
+/// Handles pattern management commands.
+async fn handle_patterns_command(command: PatternCommands) -> Result<()> {
+    use sniff::{PatternCreationRequest, PatternLearningManager, SupportedLanguage};
+    use sniff::playbook::{PatternScope, Severity};
+    
+    match command {
+        PatternCommands::Init { force } => {
+            let current_dir = std::env::current_dir()
+                .map_err(|e| SniffError::file_system(".", e))?;
+            let sniff_dir = current_dir.join(".sniff");
+            
+            if sniff_dir.exists() && !force {
+                println!("❌ .sniff directory already exists. Use --force to reinitialize.");
+                return Ok(());
+            }
+            
+            let manager = PatternLearningManager::new(&current_dir)?;
+            println!("✅ Initialized .sniff folder structure at: {}", sniff_dir.display());
+            println!("📁 Pattern learning system is ready!");
+            Ok(())
+        }
+
+        PatternCommands::Create {
+            language,
+            name,
+            description,
+            pattern,
+            severity,
+            scope,
+            flags,
+            confidence,
+            tags,
+            examples,
+            false_positives,
+        } => {
+            let current_dir = std::env::current_dir()
+                .map_err(|e| SniffError::file_system(".", e))?;
+            
+            let mut manager = PatternLearningManager::new(&current_dir)?;
+            
+            // Parse language
+            let supported_language = match language.to_lowercase().as_str() {
+                "rust" => SupportedLanguage::Rust,
+                "python" => SupportedLanguage::Python,
+                "typescript" => SupportedLanguage::TypeScript,
+                "javascript" => SupportedLanguage::JavaScript,
+                "go" => SupportedLanguage::Go,
+                "c" => SupportedLanguage::C,
+                "cpp" => SupportedLanguage::Cpp,
+                _ => {
+                    println!("❌ Unsupported language: {}. Supported: rust, python, typescript, javascript, go, c, cpp", language);
+                    return Ok(());
+                }
+            };
+            
+            // Parse severity
+            let pattern_severity = match severity.to_lowercase().as_str() {
+                "info" => Severity::Info,
+                "low" => Severity::Low,
+                "medium" => Severity::Medium,
+                "high" => Severity::High,
+                "critical" => Severity::Critical,
+                _ => {
+                    println!("❌ Invalid severity: {}. Use: info, low, medium, high, critical", severity);
+                    return Ok(());
+                }
+            };
+            
+            // Parse scope
+            let pattern_scope = match scope.to_lowercase().as_str() {
+                "file" => PatternScope::File,
+                "function_body" => PatternScope::FunctionBody,
+                "class_body" => PatternScope::ClassBody,
+                "comments" => PatternScope::Comments,
+                "method_signature" => PatternScope::MethodSignature,
+                _ => {
+                    println!("❌ Invalid scope: {}. Use: file, function_body, class_body, comments, method_signature", scope);
+                    return Ok(());
+                }
+            };
+            
+            // Parse tags
+            let pattern_tags = tags.map(|t| t.split(',').map(|s| s.trim().to_string()).collect()).unwrap_or_default();
+            
+            let request = PatternCreationRequest {
+                name,
+                description,
+                severity: pattern_severity,
+                pattern,
+                flags,
+                scope: pattern_scope,
+                language: supported_language,
+                tags: pattern_tags,
+                examples,
+                false_positives,
+                confidence,
+                source: "cli".to_string(),
+                metadata: std::collections::HashMap::new(),
+            };
+            
+            match manager.create_pattern(request) {
+                Ok(response) => {
+                    if response.success {
+                        println!("✅ Pattern created successfully!");
+                        if let Some(pattern_id) = response.pattern_id {
+                            println!("📋 Pattern ID: {}", pattern_id);
+                        }
+                        if let Some(storage_path) = response.storage_path {
+                            println!("💾 Stored at: {}", storage_path.display());
+                        }
+                        if !response.warnings.is_empty() {
+                            println!("⚠️  Warnings:");
+                            for warning in response.warnings {
+                                println!("   • {}", warning);
+                            }
+                        }
+                    } else {
+                        println!("❌ Failed to create pattern:");
+                        if let Some(error) = response.error {
+                            println!("   {}", error);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("❌ Error creating pattern: {}", e);
+                }
+            }
+            
+            Ok(())
+        }
+
+        PatternCommands::List { language, format, active_only } => {
+            let current_dir = std::env::current_dir()
+                .map_err(|e| SniffError::file_system(".", e))?;
+            
+            let manager = PatternLearningManager::new(&current_dir)?;
+            
+            let languages = if let Some(lang) = language {
+                match lang.to_lowercase().as_str() {
+                    "rust" => vec![SupportedLanguage::Rust],
+                    "python" => vec![SupportedLanguage::Python],
+                    "typescript" => vec![SupportedLanguage::TypeScript],
+                    "javascript" => vec![SupportedLanguage::JavaScript],
+                    "go" => vec![SupportedLanguage::Go],
+                    "c" => vec![SupportedLanguage::C],
+                    "cpp" => vec![SupportedLanguage::Cpp],
+                    _ => {
+                        println!("❌ Unsupported language: {}", lang);
+                        return Ok(());
+                    }
+                }
+            } else {
+                vec![
+                    SupportedLanguage::Rust,
+                    SupportedLanguage::Python,
+                    SupportedLanguage::TypeScript,
+                    SupportedLanguage::JavaScript,
+                    SupportedLanguage::Go,
+                    SupportedLanguage::C,
+                    SupportedLanguage::Cpp,
+                ]
+            };
+            
+            let mut all_patterns = Vec::new();
+            for lang in languages {
+                let patterns = manager.get_patterns_for_language(lang);
+                for pattern in patterns {
+                    if !active_only || pattern.metadata.active {
+                        all_patterns.push((lang, pattern));
+                    }
+                }
+            }
+            
+            if all_patterns.is_empty() {
+                println!("📝 No learned patterns found.");
+                println!("💡 Use 'sniff patterns create' to add new patterns!");
+                return Ok(());
+            }
+            
+            match format {
+                OutputFormat::Table => {
+                    println!("🧠 Learned Patterns");
+                    println!("═══════════════════");
+                    println!();
+                    
+                    for (lang, pattern) in all_patterns {
+                        let status = if pattern.metadata.active { "✅" } else { "❌" };
+                        println!("{}  {} | {} | {}", 
+                            status,
+                            lang.name().to_uppercase(),
+                            pattern.rule.severity.name(),
+                            pattern.rule.name
+                        );
+                        println!("   ID: {}", pattern.metadata.id);
+                        println!("   Pattern: {}", match &pattern.rule.pattern_type {
+                            sniff::playbook::PatternType::Regex { pattern, .. } => pattern,
+                            _ => "N/A",
+                        });
+                        println!("   Detections: {} | Confidence: {:.1}%", 
+                            pattern.metadata.detection_count,
+                            pattern.metadata.confidence * 100.0
+                        );
+                        println!();
+                    }
+                }
+                OutputFormat::Json => {
+                    let json_data: Vec<_> = all_patterns.iter().map(|(lang, pattern)| {
+                        serde_json::json!({
+                            "language": lang.name(),
+                            "pattern": pattern
+                        })
+                    }).collect();
+                    println!("{}", serde_json::to_string_pretty(&json_data).unwrap());
+                }
+                _ => {
+                    println!("❌ Format {} not supported for pattern listing", format as u8);
+                }
+            }
+            
+            Ok(())
+        }
+
+        PatternCommands::Stats { format } => {
+            let current_dir = std::env::current_dir()
+                .map_err(|e| SniffError::file_system(".", e))?;
+            
+            let manager = PatternLearningManager::new(&current_dir)?;
+            let stats = manager.get_statistics();
+            
+            match format {
+                OutputFormat::Table => {
+                    println!("📊 Pattern Learning Statistics");
+                    println!("════════════════════════════");
+                    println!();
+                    println!("Total Patterns: {}", stats.total_patterns);
+                    println!("Average Confidence: {:.1}%", stats.average_confidence * 100.0);
+                    println!("Total Detections: {}", stats.total_detections);
+                    println!();
+                    
+                    if !stats.patterns_by_language.is_empty() {
+                        println!("📋 Patterns by Language:");
+                        for (lang, count) in &stats.patterns_by_language {
+                            println!("   {}: {}", lang.name(), count);
+                        }
+                        println!();
+                    }
+                    
+                    if !stats.patterns_by_severity.is_empty() {
+                        println!("⚡ Patterns by Severity:");
+                        for (severity, count) in &stats.patterns_by_severity {
+                            println!("   {}: {}", severity.name(), count);
+                        }
+                        println!();
+                    }
+                    
+                    if !stats.most_active_patterns.is_empty() {
+                        println!("🏆 Most Active Patterns:");
+                        for (name, detections) in stats.most_active_patterns.iter().take(5) {
+                            println!("   {}: {} detections", name, detections);
+                        }
+                    }
+                }
+                OutputFormat::Json => {
+                    println!("{}", serde_json::to_string_pretty(&stats).unwrap());
+                }
+                _ => {
+                    println!("❌ Format {} not supported for pattern statistics", format as u8);
+                }
+            }
+            
+            Ok(())
+        }
+
+        PatternCommands::Delete { pattern_id, confirm } => {
+            if !confirm {
+                println!("❌ Pattern deletion requires --confirm flag for safety");
+                return Ok(());
+            }
+            
+            println!("🚧 Pattern deletion not yet implemented");
+            println!("💡 For now, manually edit the learned-patterns.yaml files in .sniff/patterns/");
+            Ok(())
+        }
+
+        PatternCommands::Export { language, output } => {
+            let current_dir = std::env::current_dir()
+                .map_err(|e| SniffError::file_system(".", e))?;
+            
+            let manager = PatternLearningManager::new(&current_dir)?;
+            
+            let supported_language = match language.to_lowercase().as_str() {
+                "rust" => SupportedLanguage::Rust,
+                "python" => SupportedLanguage::Python,
+                "typescript" => SupportedLanguage::TypeScript,
+                "javascript" => SupportedLanguage::JavaScript,
+                "go" => SupportedLanguage::Go,
+                "c" => SupportedLanguage::C,
+                "cpp" => SupportedLanguage::Cpp,
+                _ => {
+                    println!("❌ Unsupported language: {}", language);
+                    return Ok(());
+                }
+            };
+            
+            if let Some(playbook) = manager.to_playbook(supported_language) {
+                let yaml_content = serde_yaml::to_string(&playbook)
+                    .map_err(|e| SniffError::invalid_format("YAML export".to_string(), e.to_string()))?;
+                
+                if let Some(output_path) = output {
+                    std::fs::write(&output_path, yaml_content)
+                        .map_err(|e| SniffError::file_system(&output_path, e))?;
+                    println!("✅ Exported {} patterns to: {}", language, output_path.display());
+                } else {
+                    println!("{}", yaml_content);
+                }
+            } else {
+                println!("📝 No learned patterns found for {}", language);
+            }
+            
+            Ok(())
+        }
+
+        PatternCommands::Validate { fix: _ } => {
+            println!("🚧 Pattern validation not yet implemented");
+            println!("💡 Patterns are validated automatically when created");
+            Ok(())
+        }
+    }
+}
+
+/// Handles the analyze-files command - analyzes arbitrary files for bullshit patterns.
+async fn handle_analyze_files_command(
+    paths: Vec<PathBuf>,
+    format: OutputFormat,
+    detailed: bool,
+    include_hidden: bool,
+    extensions: Option<String>,
+    exclude: Option<String>,
+    max_file_size_mb: f64,
+    force_language: Option<String>,
+    output_file: Option<PathBuf>,
+    checkpoint: Option<String>,
+    diff_checkpoint: Option<String>,
+) -> Result<()> {
+    use sniff::standalone::{StandaloneAnalyzer, AnalysisConfig, FileFilter, CheckpointManager};
+    use sniff::analysis::BullshitAnalyzer;
+
+    info!("🕵️  Starting standalone file analysis");
+
+    // Configure file filter
+    let allowed_extensions = extensions.map(|ext| {
+        ext.split(',').map(|e| e.trim().to_string()).collect::<Vec<_>>()
+    });
+
+    let filter = FileFilter {
+        include_hidden,
+        allowed_extensions,
+        exclude_pattern: exclude,
+        max_file_size_bytes: (max_file_size_mb * 1024.0 * 1024.0) as u64,
+    };
+
+    // Create analysis config
+    let config = AnalysisConfig {
+        filter,
+        force_language: force_language.map(|lang| match lang.to_lowercase().as_str() {
+            "rust" => sniff::SupportedLanguage::Rust,
+            "python" => sniff::SupportedLanguage::Python,
+            "typescript" => sniff::SupportedLanguage::TypeScript,
+            "javascript" => sniff::SupportedLanguage::JavaScript,
+            "go" => sniff::SupportedLanguage::Go,
+            "c" => sniff::SupportedLanguage::C,
+            "cpp" => sniff::SupportedLanguage::Cpp,
+            _ => {
+                warn!("Unknown language '{}', will auto-detect", lang);
+                return None;
+            }
+        }).flatten(),
+        detailed_analysis: detailed,
+    };
+
+    // Initialize analyzer
+    let bullshit_analyzer = BullshitAnalyzer::new()?;
+    let mut analyzer = StandaloneAnalyzer::new(bullshit_analyzer, config);
+
+    // Handle checkpoint comparison if requested
+    if let Some(checkpoint_name) = diff_checkpoint {
+        let current_dir = std::env::current_dir()
+            .map_err(|e| SniffError::file_system(".", e))?;
+        let checkpoint_manager = CheckpointManager::new(&current_dir)?;
+        
+        info!("📊 Comparing against checkpoint: {}", checkpoint_name);
+        let comparison = checkpoint_manager.compare_files(&checkpoint_name, &paths).await?;
+        
+        // Analyze only changed files
+        let changed_files: Vec<PathBuf> = comparison.changed_files.into_iter()
+            .chain(comparison.new_files.into_iter())
+            .collect();
+            
+        if changed_files.is_empty() {
+            println!("✅ No changes detected since checkpoint '{}'", checkpoint_name);
+            return Ok(());
+        }
+        
+        println!("📁 Analyzing {} changed files since checkpoint '{}'", 
+                changed_files.len(), checkpoint_name);
+                
+        let results = analyzer.analyze_files(&changed_files).await?;
+        display_standalone_results(&results, format, detailed, Some(&comparison))?;
+    } else {
+        // Analyze specified files/directories
+        let results = analyzer.analyze_files(&paths).await?;
+        
+        // Create checkpoint if requested
+        if let Some(checkpoint_name) = checkpoint {
+            let current_dir = std::env::current_dir()
+                .map_err(|e| SniffError::file_system(".", e))?;
+            let checkpoint_manager = CheckpointManager::new(&current_dir)?;
+            
+            info!("📸 Creating checkpoint: {}", checkpoint_name);
+            checkpoint_manager.create_checkpoint(&checkpoint_name, &paths, None).await?;
+            println!("✅ Checkpoint '{}' created", checkpoint_name);
+        }
+        
+        display_standalone_results(&results, format, detailed, None)?;
+    }
+
+    // Save results to file if requested
+    if let Some(output_path) = output_file {
+        // Implement result serialization
+        info!("💾 Saving results to: {}", output_path.display());
+        // This would serialize the results in the requested format
+        println!("💡 Result saving not yet implemented");
+    }
+
+    Ok(())
+}
+
+/// Handles checkpoint management commands.
+async fn handle_checkpoint_command(command: CheckpointCommands) -> Result<()> {
+    use sniff::standalone::CheckpointManager;
+
+    let current_dir = std::env::current_dir()
+        .map_err(|e| SniffError::file_system(".", e))?;
+    let checkpoint_manager = CheckpointManager::new(&current_dir)?;
+
+    match command {
+        CheckpointCommands::Create { name, paths, description } => {
+            info!("📸 Creating checkpoint: {}", name);
+            checkpoint_manager.create_checkpoint(&name, &paths, description).await?;
+            println!("✅ Checkpoint '{}' created with {} files", name, paths.len());
+        }
+
+        CheckpointCommands::List { format } => {
+            let checkpoints = checkpoint_manager.list_checkpoints().await?;
+            
+            if checkpoints.is_empty() {
+                println!("📝 No checkpoints found");
+                return Ok(());
+            }
+
+            match format {
+                OutputFormat::Table => {
+                    println!("📸 Available Checkpoints");
+                    println!("════════════════════════");
+                    println!();
+                    
+                    for checkpoint in checkpoints {
+                        println!("🏷️  {}", checkpoint.name);
+                        println!("   Created: {}", checkpoint.timestamp.format("%Y-%m-%d %H:%M:%S"));
+                        println!("   Files: {}", checkpoint.file_count);
+                        if let Some(desc) = checkpoint.description {
+                            println!("   Description: {}", desc);
+                        }
+                        println!();
+                    }
+                }
+                OutputFormat::Json => {
+                    println!("{}", serde_json::to_string_pretty(&checkpoints)?);
+                }
+                _ => {
+                    for checkpoint in checkpoints {
+                        println!("{}: {} files ({})", 
+                            checkpoint.name, 
+                            checkpoint.file_count,
+                            checkpoint.timestamp.format("%Y-%m-%d %H:%M")
+                        );
+                    }
+                }
+            }
+        }
+
+        CheckpointCommands::Show { name, format: _ } => {
+            if let Some(checkpoint) = checkpoint_manager.get_checkpoint(&name).await? {
+                println!("📸 Checkpoint: {}", checkpoint.name);
+                println!("Created: {}", checkpoint.timestamp.format("%Y-%m-%d %H:%M:%S"));
+                println!("Files: {}", checkpoint.file_count);
+                if let Some(desc) = checkpoint.description {
+                    println!("Description: {}", desc);
+                }
+                // Show file list
+                let details = checkpoint_manager.get_checkpoint_files(&name).await?;
+                println!("\nFiles in checkpoint:");
+                for file_info in details {
+                    println!("  {} ({})", file_info.path.display(), file_info.file_size);
+                }
+            } else {
+                println!("❌ Checkpoint '{}' not found", name);
+            }
+        }
+
+        CheckpointCommands::Diff { checkpoint, paths, format } => {
+            let comparison_paths = paths.unwrap_or_else(|| {
+                // Get paths from checkpoint if not provided
+                vec![std::env::current_dir().unwrap()]
+            });
+            
+            let comparison = checkpoint_manager.compare_files(&checkpoint, &comparison_paths).await?;
+            
+            match format {
+                OutputFormat::Table => {
+                    println!("📊 Changes since checkpoint '{}'", checkpoint);
+                    println!("═══════════════════════════════════");
+                    println!();
+                    
+                    if !comparison.new_files.is_empty() {
+                        println!("📄 New files ({}): ", comparison.new_files.len());
+                        for file in &comparison.new_files {
+                            println!("  + {}", file.display());
+                        }
+                        println!();
+                    }
+                    
+                    if !comparison.changed_files.is_empty() {
+                        println!("📝 Modified files ({}): ", comparison.changed_files.len());
+                        for file in &comparison.changed_files {
+                            println!("  ~ {}", file.display());
+                        }
+                        println!();
+                    }
+                    
+                    if !comparison.deleted_files.is_empty() {
+                        println!("🗑️  Deleted files ({}): ", comparison.deleted_files.len());
+                        for file in &comparison.deleted_files {
+                            println!("  - {}", file.display());
+                        }
+                        println!();
+                    }
+                    
+                    if comparison.new_files.is_empty() && comparison.changed_files.is_empty() && comparison.deleted_files.is_empty() {
+                        println!("✅ No changes detected since checkpoint");
+                    }
+                }
+                OutputFormat::Json => {
+                    println!("{}", serde_json::to_string_pretty(&comparison)?);
+                }
+                _ => {
+                    println!("Changes: +{} ~{} -{}", 
+                        comparison.new_files.len(),
+                        comparison.changed_files.len(), 
+                        comparison.deleted_files.len()
+                    );
+                }
+            }
+        }
+
+        CheckpointCommands::Delete { name, confirm } => {
+            if !confirm {
+                println!("❌ Checkpoint deletion requires --confirm flag for safety");
+                return Ok(());
+            }
+            
+            checkpoint_manager.delete_checkpoint(&name).await?;
+            println!("✅ Checkpoint '{}' deleted", name);
+        }
+    }
+
+    Ok(())
+}
+
+/// Displays standalone analysis results.
+fn display_standalone_results(
+    results: &sniff::standalone::AnalysisResults,
+    format: OutputFormat,
+    detailed: bool,
+    comparison: Option<&sniff::standalone::FileComparison>,
+) -> Result<()> {
+    match format {
+        OutputFormat::Table => {
+            println!("🕵️  Standalone File Analysis Results");
+            println!("══════════════════════════════════════");
+            println!();
+            
+            if let Some(comp) = comparison {
+                println!("📊 Change Summary:");
+                println!("   New files: {}", comp.new_files.len());
+                println!("   Modified files: {}", comp.changed_files.len());
+                println!("   Deleted files: {}", comp.deleted_files.len());
+                println!();
+            }
+            
+            println!("📈 Analysis Summary:");
+            println!("   Files analyzed: {}", results.total_files);
+            println!("   Total patterns: {}", results.total_detections);
+            println!("   Critical issues: {}", results.critical_issues);
+            println!("   Average quality: {:.1}%", results.average_quality_score);
+            println!();
+            
+            if !results.file_results.is_empty() {
+                println!("📄 File Analysis:");
+                for file_result in &results.file_results {
+                    if !file_result.detections.is_empty() {
+                        println!("   {} ({})", 
+                            file_result.file_path.display(),
+                            file_result.language.map(|l| l.name()).unwrap_or("unknown")
+                        );
+                        println!("      Issues: {} | Quality: {:.1}%", 
+                            file_result.detections.len(),
+                            file_result.quality_score
+                        );
+                        
+                        if detailed {
+                            for detection in &file_result.detections {
+                                println!("         {} {} ({}:{}): {}", 
+                                    detection.severity.emoji(),
+                                    detection.rule_name,
+                                    detection.file_path,
+                                    detection.line_number,
+                                    detection.code_snippet.trim()
+                                );
+                            }
+                        }
+                        println!();
+                    }
+                }
+            }
+            
+            if results.critical_issues > 0 {
+                println!("🚨 {} critical issues detected that require immediate attention", results.critical_issues);
+            } else if results.total_detections == 0 {
+                println!("✅ No issues detected! Code quality looks excellent.");
+            }
+        }
+        
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(results)?);
+        }
+        
+        OutputFormat::Markdown => {
+            println!("# 🕵️ Standalone File Analysis Results");
+            println!();
+            println!("## Summary");
+            println!();
+            println!("| Metric | Value |");
+            println!("| ------ | ----- |");
+            println!("| Files analyzed | {} |", results.total_files);
+            println!("| Total patterns | {} |", results.total_detections);
+            println!("| Critical issues | {} |", results.critical_issues);
+            println!("| Average quality | {:.1}% |", results.average_quality_score);
+            println!();
+            
+            if !results.file_results.is_empty() {
+                println!("## File Analysis");
+                println!();
+                for file_result in &results.file_results {
+                    if !file_result.detections.is_empty() {
+                        println!("### `{}`", file_result.file_path.display());
+                        println!();
+                        println!("- **Language**: {}", file_result.language.map(|l| l.name()).unwrap_or("unknown"));
+                        println!("- **Issues**: {}", file_result.detections.len());
+                        println!("- **Quality**: {:.1}%", file_result.quality_score);
+                        println!();
+                        
+                        if detailed {
+                            println!("#### Issues");
+                            println!();
+                            for detection in &file_result.detections {
+                                println!("- {} **{}** (line {}): `{}`", 
+                                    detection.severity.emoji(),
+                                    detection.rule_name,
+                                    detection.line_number,
+                                    detection.code_snippet.trim()
+                                );
+                            }
+                            println!();
+                        }
+                    }
+                }
+            }
+        }
+        
+        OutputFormat::Compact => {
+            for file_result in &results.file_results {
+                if !file_result.detections.is_empty() {
+                    println!("{}: {} issues, {:.1}% quality", 
+                        file_result.file_path.display(),
+                        file_result.detections.len(),
+                        file_result.quality_score
+                    );
+                }
+            }
+        }
+    }
+    
+    Ok(())
 }

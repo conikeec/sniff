@@ -31,11 +31,13 @@ pub mod error;
 pub mod hash;
 pub mod jsonl;
 pub mod operations;
+pub mod pattern_learning;
 pub mod playbook;
 pub mod progress;
 pub mod search;
 pub mod session;
 pub mod simple_session_analyzer;
+pub mod standalone;
 pub mod storage;
 pub mod tree;
 pub mod types;
@@ -48,5 +50,9 @@ pub use analysis::{
 };
 pub use display::BullshitDisplayFormatter;
 pub use error::{Result, SniffError};
+pub use pattern_learning::{
+    LearnedPattern, LearningConfig, PatternCreationRequest, PatternCreationResponse,
+    PatternLearningManager, PatternMetadata, PatternStatistics,
+};
 pub use simple_session_analyzer::{SimpleSessionAnalysis, SimpleSessionAnalyzer};
 pub use types::{ClaudeMessage, MessageUuid, SessionId, ToolUseId, ToolUseOperation};
