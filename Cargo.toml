@@ -1,0 +1,42 @@
+[package]
+name = "claude-tree"
+version = "0.1.0"
+edition = "2021"
+authors = ["Chetan Conikee <conikee@gmail.com>"]
+license = "MIT"
+description = "Advanced CLI tool for navigating and searching Claude Code session histories"
+repository = "https://github.com/chetanconikee/claude-tree"
+keywords = ["cli", "claude", "sessions", "search", "merkle-tree"]
+categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
+# Core async runtime and utilities
+tokio = { version = "1.40", features = ["full"] }
+anyhow = "1.0"
+thiserror = "1.0"
+
+# JSON and serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Date and time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# File system operations and watching
+notify = "6.1"
+walkdir = "2.4"
+dirs = "5.0"
+
+# Hashing and cryptography
+blake3 = "1.5"
+
+# CLI framework (for future use)
+clap = { version = "4.4", features = ["derive"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tempfile = "3.8"
+tokio-test = "0.4"
