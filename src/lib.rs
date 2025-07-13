@@ -12,8 +12,12 @@
 #![allow(clippy::module_name_repetitions)]
 
 pub mod error;
+pub mod hash;
 pub mod jsonl;
 pub mod operations;
+pub mod session;
+pub mod storage;
+pub mod tree;
 pub mod types;
 pub mod watcher;
 

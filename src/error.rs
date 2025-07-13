@@ -102,6 +102,13 @@ pub enum ClaudeTreeError {
         /// The reason for the format invalidity.
         reason: String,
     },
+
+    /// Error occurred during storage operations.
+    #[error("Storage error: {reason}")]
+    StorageError {
+        /// The reason for the storage failure.
+        reason: String,
+    },
 }
 
 impl ClaudeTreeError {
@@ -177,6 +184,13 @@ impl ClaudeTreeError {
     pub fn invalid_format(context: impl Into<String>, reason: impl Into<String>) -> Self {
         Self::InvalidFormat {
             context: context.into(),
+            reason: reason.into(),
+        }
+    }
+
+    /// Creates a new storage error.
+    pub fn storage_error(reason: impl Into<String>) -> Self {
+        Self::StorageError {
             reason: reason.into(),
         }
     }
