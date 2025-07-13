@@ -1,0 +1,133 @@
+name: "TypeScript Bullshit Detection Patterns"
+version: "1.0.0"
+language: "typescript"
+author: "Sniff Core Team"
+description: "Comprehensive bullshit detection patterns for TypeScript/JavaScript code"
+
+rules:
+  - id: "ts_throw_not_implemented"
+    name: "Throw Not Implemented"
+    description: "Function throws 'not implemented' error"
+    severity: "Critical"
+    pattern_type: !Regex
+      pattern: "throw\\s+(?:new\\s+)?Error\\s*\\(\\s*[\\\"'][^\\\"']*(?:not implemented|TODO|FIXME|placeholder)[^\\\"']*[\\\"']\\s*\\)"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["placeholder", "incomplete"]
+    examples:
+      - "throw new Error('Not implemented');"
+      - "throw Error('TODO: implement this');"
+    false_positives: []
+
+  - id: "ts_todo_comment"
+    name: "TODO Comment"
+    description: "TODO, FIXME, or XXX comment in code"
+    severity: "Medium"
+    pattern_type: !Regex
+      pattern: "(?i)//\\s*(?:TODO|FIXME|XXX|HACK):"
+      flags: "i"
+    scope: "Comments"
+    enabled: true
+    tags: ["todo", "incomplete"]
+    examples:
+      - "// TODO: implement this"
+      - "// FIXME: handle errors properly"
+      - "// XXX: this is a hack"
+    false_positives: []
+
+  - id: "ts_shortcut_comments"
+    name: "AI Shortcut Comments"
+    description: "Comments indicating AI took shortcuts or temporary solutions"
+    severity: "Medium"
+    pattern_type: !Regex
+      pattern: "(?i)//\\s*(?:for now|temporary|quick fix|hack|workaround|temporary solution|quick and dirty|placeholder|stub|mock|dummy|just for now|temp|tmp)"
+      flags: "i"
+    scope: "Comments"
+    enabled: true
+    tags: ["shortcuts", "temporary", "ai_patterns"]
+    examples:
+      - "// For now, just return null"
+      - "// Temporary solution until we implement X"
+      - "// Quick fix - needs proper implementation"
+      - "// Workaround for issue #123"
+    false_positives: []
+
+  - id: "ts_empty_function_body"
+    name: "Empty Function Body"
+    description: "Function has completely empty body"
+    severity: "High"
+    pattern_type: !Regex
+      pattern: "(?:function\\s+\\w+|\\w+\\s*(?:=|:)\\s*(?:function|\\([^)]*\\)\\s*=>))\\s*\\([^)]*\\)\\s*\\{\\s*\\}"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["empty", "incomplete"]
+    examples:
+      - "function doSomething() {}"
+      - "const handler = () => {}"
+    false_positives:
+      - "function marker() {} // Intentionally empty"
+
+  - id: "ts_any_type_usage"
+    name: "Any Type Usage"
+    description: "Using 'any' type which defeats TypeScript's purpose"
+    severity: "Medium"
+    pattern_type: !Regex
+      pattern: ":\\s*any\\b"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["typing", "any", "type_safety"]
+    examples:
+      - "function process(data: any)"
+      - "let value: any = getData();"
+    false_positives:
+      - "// Sometimes any is legitimately needed"
+
+  - id: "ts_as_any_cast"
+    name: "Type Cast to Any"
+    description: "Casting to 'any' type to bypass type checking"
+    severity: "High"
+    pattern_type: !Regex
+      pattern: "as\\s+any\\b"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["typing", "cast", "type_bypass"]
+    examples:
+      - "(data as any).property"
+      - "return result as any;"
+    false_positives: []
+
+  - id: "ts_ts_ignore_comment"
+    name: "TypeScript Ignore Comment"
+    description: "Using @ts-ignore to suppress TypeScript errors"
+    severity: "Medium"
+    pattern_type: !Regex
+      pattern: "//\\s*@ts-ignore"
+      flags: "i"
+    scope: "Comments"
+    enabled: true
+    tags: ["typescript", "ignore", "type_checking"]
+    examples:
+      - "// @ts-ignore"
+      - "//@ts-ignore - temporary fix"
+    false_positives: []
+
+  - id: "ts_console_log_debug"
+    name: "Console.log Debug Left In Code"
+    description: "console.log statements left in production code"
+    severity: "Low"
+    pattern_type: !Regex
+      pattern: "console\\.log\\s*\\([^)]*(?:debug|DEBUG|trace|TRACE|test|TEST)[^)]*\\)"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["debug", "console"]
+    examples:
+      - "console.log('DEBUG:', value);"
+      - "console.log('trace entering function');"
+    false_positives: []
+
+metadata:
+  created_at: "2025-01-13"
+  updated_at: "2025-01-13"
+  minimum_sniff_version: "0.1.0"

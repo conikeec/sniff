@@ -1,0 +1,119 @@
+name: "Rust Bullshit Detection Patterns"
+version: "1.0.0"
+language: "rust"
+author: "Sniff Core Team"
+description: "Comprehensive bullshit detection patterns for Rust code"
+
+rules:
+  - id: "rust_unimplemented_macro"
+    name: "Unimplemented Macro"
+    description: "Function uses unimplemented!() macro"
+    severity: "Critical"
+    pattern_type: !Regex
+      pattern: "unimplemented!\\(\\)"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["placeholder", "incomplete"]
+    examples:
+      - "fn do_something() { unimplemented!() }"
+      - "fn calculate() -> i32 { unimplemented!(\"pending math\") }"
+    false_positives: []
+
+  - id: "rust_todo_comment"
+    name: "TODO Comment"
+    description: "TODO, FIXME, or XXX comment in code"
+    severity: "Medium"
+    pattern_type: !Regex
+      pattern: "(?i)//\\s*(TODO|FIXME|XXX|HACK):"
+      flags: "i"
+    scope: "Comments"
+    enabled: true
+    tags: ["todo", "incomplete"]
+    examples:
+      - "// TODO: implement this"
+      - "// FIXME: handle errors properly"
+      - "// XXX: this is a hack"
+    false_positives:
+      - "// TODO: This is in documentation"
+
+  - id: "rust_shortcut_comments"
+    name: "AI Shortcut Comments"
+    description: "Comments indicating AI took shortcuts or temporary solutions"
+    severity: "Medium"
+    pattern_type: !Regex
+      pattern: "(?i)//\\s*(?:for now|temporary|quick fix|hack|workaround|temporary solution|quick and dirty|placeholder|stub|mock|dummy|just for now|temp|tmp)"
+      flags: "i"
+    scope: "Comments"
+    enabled: true
+    tags: ["shortcuts", "temporary", "ai_patterns"]
+    examples:
+      - "// For now, just return 0"
+      - "// Temporary solution until we implement X"
+      - "// Quick fix - needs proper implementation"
+      - "// Workaround for issue #123"
+    false_positives: []
+
+  - id: "rust_unwrap_without_context"
+    name: "Unwrap Without Context"
+    description: "Using unwrap() without proper error handling context"
+    severity: "Medium"
+    pattern_type: !Regex
+      pattern: "\\.unwrap\\(\\)"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["error_handling", "unwrap"]
+    examples:
+      - "let value = result.unwrap();"
+      - "config.get(\"key\").unwrap()"
+    false_positives:
+      - "let value = result.unwrap(); // Safe: validated above"
+
+  - id: "rust_hardcoded_values"
+    name: "Hardcoded Placeholder Values"
+    description: "Hardcoded values with placeholder comments"
+    severity: "Medium"
+    pattern_type: !Regex
+      pattern: "(?:=|return)\\s*(?:0|1|42|999|\"test\"|\"placeholder\"|\"dummy\")\\s*[;,]?\\s*//.*(?i)(?:for now|temporary|placeholder|dummy|mock|hardcoded)"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["hardcoded", "placeholder"]
+    examples:
+      - "return 42; // For now"
+      - "let value = 0; // Temporary placeholder"
+      - "const DEFAULT = \"dummy\"; // Hardcoded for now"
+    false_positives: []
+
+  - id: "rust_magic_numbers"
+    name: "Magic Numbers with Comments"
+    description: "Magic numbers with explanatory comments indicating temporary use"
+    severity: "Low"
+    pattern_type: !Regex
+      pattern: "(?:=|return|\\+|\\-|\\*|/)\\s*(?:42|69|123|456|789|999|1000|9999)\\s*[;,)]?\\s*//.*(?i)(?:magic|arbitrary|random|for now|temporary)"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["magic_numbers", "temporary"]
+    examples:
+      - "let size = 42; // Magic number for now"
+      - "return 999; // Arbitrary value"
+    false_positives: []
+
+  - id: "rust_dbg_macro_left_in"
+    name: "Debug Macro Left In Code"
+    description: "dbg! macro left in production code"
+    severity: "Medium"
+    pattern_type: !Regex
+      pattern: "dbg!\\s*\\([^)]+\\)"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["debug", "production"]
+    examples:
+      - "dbg!(variable);"
+      - "let result = dbg!(computation());"
+    false_positives: []
+
+metadata:
+  created_at: "2025-01-13"
+  updated_at: "2025-01-13"
+  minimum_sniff_version: "0.1.0"

@@ -7,7 +7,10 @@
 //! directories, detecting changes to session files and triggering
 //! appropriate processing workflows.
 
-use crate::error::{ClaudeTreeError, Result};
+#![allow(clippy::match_same_arms)]
+#![allow(clippy::unused_async)]
+
+use crate::error::{Result, SniffError};
 use crate::types::SessionId;
 use notify::{
     event::{CreateKind, ModifyKind, RemoveKind},
@@ -137,7 +140,7 @@ impl ClaudeWatcher {
 
         // Ensure the projects directory exists
         if !self.config.claude_projects_path.exists() {
-            return Err(ClaudeTreeError::project_discovery(
+            return Err(SniffError::project_discovery(
                 &self.config.claude_projects_path,
                 "Claude projects directory does not exist",
             ));
@@ -154,12 +157,12 @@ impl ClaudeWatcher {
             tx,
             notify::Config::default().with_poll_interval(Duration::from_millis(100)),
         )
-        .map_err(ClaudeTreeError::file_watcher)?;
+        .map_err(SniffError::file_watcher)?;
 
         // Watch the projects directory recursively
         watcher
             .watch(&self.config.claude_projects_path, RecursiveMode::Recursive)
-            .map_err(ClaudeTreeError::file_watcher)?;
+            .map_err(SniffError::file_watcher)?;
 
         info!("File watcher started successfully");
 
@@ -194,7 +197,7 @@ impl ClaudeWatcher {
 
         for entry in walker {
             let entry = entry.map_err(|e| {
-                ClaudeTreeError::file_system(&self.config.claude_projects_path, e.into())
+                SniffError::file_system(&self.config.claude_projects_path, e.into())
             })?;
 
             if entry.file_type().is_file() {
@@ -215,7 +218,7 @@ impl ClaudeWatcher {
 
     /// Handles a file system event from the notify library.
     async fn handle_fs_event(&mut self, event: notify::Result<Event>) -> Result<()> {
-        let event = event.map_err(ClaudeTreeError::file_watcher)?;
+        let event = event.map_err(SniffError::file_watcher)?;
 
         debug!("Received FS event: {:?}", event);
 
@@ -379,7 +382,7 @@ impl ClaudeWatcher {
 
 /// Utility functions for working with Claude project directories.
 pub mod utils {
-    use super::*;
+    use super::{Path, PathBuf, Result, SniffError};
 
     /// Discovers all existing project directories.
     ///
@@ -396,13 +399,13 @@ pub mod utils {
         let mut projects = Vec::new();
 
         for entry in std::fs::read_dir(projects_path)
-            .map_err(|e| ClaudeTreeError::file_system(projects_path, e))?
+            .map_err(|e| SniffError::file_system(projects_path, e))?
         {
-            let entry = entry.map_err(|e| ClaudeTreeError::file_system(projects_path, e))?;
+            let entry = entry.map_err(|e| SniffError::file_system(projects_path, e))?;
 
             if entry
                 .file_type()
-                .map_err(|e| ClaudeTreeError::file_system(projects_path, e))?
+                .map_err(|e| SniffError::file_system(projects_path, e))?
                 .is_dir()
             {
                 projects.push(entry.path());
@@ -422,10 +425,10 @@ pub mod utils {
 
         let mut sessions = Vec::new();
 
-        for entry in std::fs::read_dir(project_path)
-            .map_err(|e| ClaudeTreeError::file_system(project_path, e))?
+        for entry in
+            std::fs::read_dir(project_path).map_err(|e| SniffError::file_system(project_path, e))?
         {
-            let entry = entry.map_err(|e| ClaudeTreeError::file_system(project_path, e))?;
+            let entry = entry.map_err(|e| SniffError::file_system(project_path, e))?;
             let path = entry.path();
 
             if path.extension().and_then(|ext| ext.to_str()) == Some("jsonl") {

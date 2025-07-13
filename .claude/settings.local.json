@@ -6,7 +6,27 @@
       "Bash(cargo test)",
       "Bash(cargo fmt:*)",
       "Bash(git init:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git remote add:*)",
+      "Bash(git push:*)",
+      "Bash(git checkout:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo fix:*)",
+      "Bash(cargo:*)",
+      "Bash(./target/debug/claude-tree:*)",
+      "Bash(sed:*)",
+      "Bash(grep:*)",
+      "Bash(claude-tree stats)",
+      "Bash(claude-tree search:*)",
+      "Bash(find:*)",
+      "Bash(mkdir:*)",
+      "Bash(rm:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(./target/debug/test_analyzer)",
+      "Bash(rustc:*)",
+      "Bash(./test_enhanced_patterns)",
+      "Bash(./test_learned_analyzer)"
     ],
     "deny": []
   }

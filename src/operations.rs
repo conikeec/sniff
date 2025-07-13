@@ -171,6 +171,7 @@ impl Default for OperationExtractor {
 
 impl OperationExtractor {
     /// Creates a new operation extractor with default configuration.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             analyze_dependencies: true,
@@ -179,6 +180,7 @@ impl OperationExtractor {
     }
 
     /// Creates a new operation extractor with custom configuration.
+    #[must_use]
     pub fn with_config(config: ExtractionConfig) -> Self {
         Self {
             analyze_dependencies: config.analyze_dependencies,
@@ -345,31 +347,72 @@ impl OperationExtractor {
     /// Collects tool results for correlation with operations.
     fn collect_tool_results(
         &self,
-        _user_msg: &crate::types::UserMessage,
-        tool_result: &crate::types::ToolUseResult,
+        user_msg: &crate::types::UserMessage,
+        tool_result: &crate::types::ToolUseResultData,
         results: &mut HashMap<String, OperationOutput>,
     ) {
         // Extract tool use ID from the user message content
-        // This is a simplified extraction - in practice, we'd need to match
-        // the tool_use_id from the message content array
+        let tool_use_ids = self.extract_tool_use_ids_from_user_message(user_msg);
 
-        let output = OperationOutput {
-            stdout: Some(tool_result.stdout.clone()),
-            stderr: Some(tool_result.stderr.clone()),
-            truncated: tool_result.truncated.unwrap_or(false),
-            files_processed: tool_result.num_files,
-            file_names: tool_result.filenames.clone().unwrap_or_default(),
-            is_image: tool_result.is_image,
+        let output = match tool_result {
+            crate::types::ToolUseResultData::Simple(text) => OperationOutput {
+                stdout: Some(text.clone()),
+                stderr: None,
+                truncated: false,
+                files_processed: None,
+                file_names: vec![],
+                is_image: false,
+            },
+            crate::types::ToolUseResultData::Structured(structured) => OperationOutput {
+                stdout: Some(structured.stdout.clone()),
+                stderr: Some(structured.stderr.clone()),
+                truncated: structured.truncated.unwrap_or(false),
+                files_processed: structured.num_files,
+                file_names: structured.filenames.clone().unwrap_or_default(),
+                is_image: structured.is_image,
+            },
         };
 
-        // Note: This is a simplified approach. In practice, we'd need to
-        // properly correlate tool_use_id with the results
-        if let Some(filenames) = &tool_result.filenames {
-            if !filenames.is_empty() {
-                // Use a placeholder key for now
-                results.insert("placeholder".to_string(), output);
+        // Store the result for each tool use ID found in the message
+        if tool_use_ids.is_empty() {
+            // Fallback: if we can't extract tool_use_id, use a timestamp-based key
+            let timestamp_key = format!("unknown_{}", user_msg.base.timestamp.timestamp_millis());
+            results.insert(timestamp_key, output);
+        } else {
+            for tool_use_id in tool_use_ids {
+                results.insert(tool_use_id, output.clone());
             }
         }
+    }
+
+    /// Extracts tool use IDs from user message content.
+    fn extract_tool_use_ids_from_user_message(
+        &self,
+        user_msg: &crate::types::UserMessage,
+    ) -> Vec<String> {
+        use crate::types::{ContentBlock, UserContentType};
+
+        let mut tool_use_ids = Vec::new();
+
+        match &user_msg.message.content {
+            UserContentType::ContentBlocks(blocks) => {
+                for block in blocks {
+                    if let ContentBlock::ToolResult { tool_use_id, .. } = block {
+                        tool_use_ids.push(tool_use_id.clone());
+                    }
+                }
+            }
+            UserContentType::ToolResults(results) => {
+                for result in results {
+                    tool_use_ids.push(result.tool_use_id.clone());
+                }
+            }
+            UserContentType::Text(_) => {
+                // Plain text messages don't contain tool use IDs
+            }
+        }
+
+        tool_use_ids
     }
 
     /// Analyzes dependencies between operations.
@@ -447,6 +490,7 @@ pub struct OperationStats {
 
 impl OperationStats {
     /// Computes statistics from a collection of operations.
+    #[must_use]
     pub fn from_operations(operations: &[Operation]) -> Self {
         let mut stats = Self {
             total_operations: operations.len(),
