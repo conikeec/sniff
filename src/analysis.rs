@@ -28,6 +28,7 @@ use rust_tree_sitter::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 use std::path::Path;
 
 /// Represents a language supported by the analysis system.
@@ -120,6 +121,8 @@ pub struct BullshitDetection {
     pub tags: Vec<String>,
     /// Performance impact assessment (optional).
     pub performance_impact: Option<PerformanceImpact>,
+    /// Test file classification and context information.
+    pub test_context: Option<TestContext>,
 }
 
 /// Enhanced analysis result that includes performance metrics.
@@ -176,6 +179,664 @@ pub struct QualityAssessment {
     pub completeness_score: f64,
 }
 
+/// Test file classification and context information.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TestContext {
+    /// Whether this file is classified as a test file.
+    pub is_test_file: bool,
+    /// Confidence level of test classification (0.0-1.0).
+    pub confidence: f64,
+    /// Type of test file detected.
+    pub test_type: TestFileType,
+    /// Indicators that led to test classification.
+    pub indicators: Vec<TestIndicator>,
+    /// Adjusted severity for test context.
+    pub adjusted_severity: Severity,
+    /// Whether this detection should be suppressed in test files.
+    pub should_suppress: bool,
+}
+
+/// Types of test files detected.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum TestFileType {
+    /// Unit test file
+    UnitTest,
+    /// Integration test file
+    IntegrationTest,
+    /// End-to-end test file
+    E2ETest,
+    /// Benchmark/performance test file
+    BenchmarkTest,
+    /// Mock/fixture file for testing
+    MockFile,
+    /// Test utility/helper file
+    TestUtility,
+    /// Example code that may contain intentional patterns
+    ExampleCode,
+    /// Documentation test (like doctests)
+    DocumentationTest,
+    /// Unknown test type
+    Unknown,
+    /// Not a test file
+    NotTest,
+}
+
+/// Indicators used for test file classification.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum TestIndicator {
+    /// File path contains test-related keywords
+    PathKeyword(String),
+    /// File name follows test naming convention
+    NamingConvention(String),
+    /// Directory structure indicates test location
+    DirectoryStructure(String),
+    /// Code contains test framework imports/attributes
+    TestFramework(String),
+    /// Code contains test-specific patterns
+    TestPattern(String),
+    /// File has test file extension or suffix
+    FileExtension(String),
+}
+
+/// Test file classifier for identifying test files and adjusting severity.
+pub struct TestFileClassifier {
+    /// Cached classification results to avoid re-analysis
+    classification_cache: Arc<RwLock<HashMap<String, TestContext>>>,
+}
+
+impl Default for TestFileClassifier {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TestFileClassifier {
+    /// Creates a new test file classifier.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            classification_cache: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// Classifies a file as test or production code.
+    pub fn classify_file(&self, file_path: &str, file_content: Option<&str>) -> TestContext {
+        // Check cache first
+        if let Ok(cache) = self.classification_cache.read() {
+            if let Some(cached) = cache.get(file_path) {
+                return cached.clone();
+            }
+        }
+
+        let mut indicators = Vec::new();
+        let mut confidence = 0.0;
+        let mut test_type = TestFileType::NotTest;
+
+        // Analyze file path and name
+        let path_analysis = self.analyze_file_path(file_path);
+        indicators.extend(path_analysis.indicators);
+        confidence += path_analysis.confidence;
+        if path_analysis.test_type != TestFileType::NotTest {
+            test_type = path_analysis.test_type;
+        }
+
+        // Analyze content if available
+        if let Some(content) = file_content {
+            let content_analysis = self.analyze_file_content(content, file_path);
+            indicators.extend(content_analysis.indicators);
+            confidence += content_analysis.confidence;
+            if content_analysis.test_type != TestFileType::NotTest {
+                test_type = content_analysis.test_type;
+            }
+        }
+
+        // Normalize confidence to 0.0-1.0 range
+        confidence = confidence.min(1.0);
+        
+        let is_test_file = confidence > 0.3; // Threshold for test classification
+        
+        let context = TestContext {
+            is_test_file,
+            confidence,
+            test_type,
+            indicators,
+            adjusted_severity: Severity::Low, // Will be set later based on original severity
+            should_suppress: false, // Will be determined based on detection type
+        };
+
+        // Cache the result
+        if let Ok(mut cache) = self.classification_cache.write() {
+            cache.insert(file_path.to_string(), context.clone());
+        }
+        context
+    }
+
+    /// Analyzes file path for test indicators.
+    fn analyze_file_path(&self, file_path: &str) -> TestAnalysisResult {
+        let mut indicators = Vec::new();
+        let mut confidence = 0.0;
+        let mut test_type = TestFileType::NotTest;
+
+        let path_lower = file_path.to_lowercase();
+        let path = std::path::Path::new(file_path);
+        
+        // Check directory structure
+        if let Some(parent) = path.parent() {
+            let parent_str = parent.to_string_lossy().to_lowercase();
+            
+            // Common test directory patterns
+            if parent_str.contains("/tests/") || parent_str.contains("\\tests\\") || parent_str.ends_with("/tests") || parent_str.ends_with("\\tests") {
+                indicators.push(TestIndicator::DirectoryStructure("tests directory".to_string()));
+                confidence += 0.4;
+                test_type = TestFileType::UnitTest;
+            } else if parent_str.contains("/test/") || parent_str.contains("\\test\\") || parent_str.ends_with("/test") || parent_str.ends_with("\\test") {
+                indicators.push(TestIndicator::DirectoryStructure("test directory".to_string()));
+                confidence += 0.4;
+                test_type = TestFileType::UnitTest;
+            } else if parent_str.contains("spec") {
+                indicators.push(TestIndicator::DirectoryStructure("spec directory".to_string()));
+                confidence += 0.3;
+                test_type = TestFileType::UnitTest;
+            } else if parent_str.contains("__tests__") {
+                indicators.push(TestIndicator::DirectoryStructure("__tests__ directory".to_string()));
+                confidence += 0.4;
+                test_type = TestFileType::UnitTest;
+            } else if parent_str.contains("integration") {
+                indicators.push(TestIndicator::DirectoryStructure("integration directory".to_string()));
+                confidence += 0.3;
+                test_type = TestFileType::IntegrationTest;
+            } else if parent_str.contains("e2e") || parent_str.contains("end-to-end") {
+                indicators.push(TestIndicator::DirectoryStructure("e2e directory".to_string()));
+                confidence += 0.3;
+                test_type = TestFileType::E2ETest;
+            } else if parent_str.contains("benchmark") || parent_str.contains("benches") {
+                indicators.push(TestIndicator::DirectoryStructure("benchmark directory".to_string()));
+                confidence += 0.3;
+                test_type = TestFileType::BenchmarkTest;
+            } else if parent_str.contains("mock") || parent_str.contains("fixture") {
+                indicators.push(TestIndicator::DirectoryStructure("mock/fixture directory".to_string()));
+                confidence += 0.3;
+                test_type = TestFileType::MockFile;
+            } else if parent_str.contains("example") || parent_str.contains("demo") {
+                indicators.push(TestIndicator::DirectoryStructure("example directory".to_string()));
+                confidence += 0.2;
+                test_type = TestFileType::ExampleCode;
+            }
+        }
+
+        // Check file name patterns
+        if let Some(file_name) = path.file_name() {
+            let name_str = file_name.to_string_lossy().to_lowercase();
+            
+            // Test file naming conventions
+            if name_str.starts_with("test_") || name_str.starts_with("test-") {
+                indicators.push(TestIndicator::NamingConvention("test_ prefix".to_string()));
+                confidence += 0.3;
+                if test_type == TestFileType::NotTest {
+                    test_type = TestFileType::UnitTest;
+                }
+            } else if name_str.ends_with("_test.rs") || name_str.ends_with("-test.rs") ||
+                      name_str.ends_with("_test.py") || name_str.ends_with("-test.py") ||
+                      name_str.ends_with("_test.js") || name_str.ends_with("-test.js") ||
+                      name_str.ends_with("_test.ts") || name_str.ends_with("-test.ts") {
+                indicators.push(TestIndicator::NamingConvention("_test suffix".to_string()));
+                confidence += 0.3;
+                if test_type == TestFileType::NotTest {
+                    test_type = TestFileType::UnitTest;
+                }
+            } else if name_str.ends_with(".test.js") || name_str.ends_with(".test.ts") ||
+                      name_str.ends_with(".test.py") || name_str.ends_with(".test.go") {
+                indicators.push(TestIndicator::NamingConvention(".test extension".to_string()));
+                confidence += 0.3;
+                if test_type == TestFileType::NotTest {
+                    test_type = TestFileType::UnitTest;
+                }
+            } else if name_str.ends_with(".spec.js") || name_str.ends_with(".spec.ts") ||
+                      name_str.ends_with(".spec.py") {
+                indicators.push(TestIndicator::NamingConvention(".spec extension".to_string()));
+                confidence += 0.3;
+                if test_type == TestFileType::NotTest {
+                    test_type = TestFileType::UnitTest;
+                }
+            } else if name_str.contains("_test_") || name_str.contains("-test-") {
+                indicators.push(TestIndicator::NamingConvention("_test_ infix".to_string()));
+                confidence += 0.2;
+                if test_type == TestFileType::NotTest {
+                    test_type = TestFileType::UnitTest;
+                }
+            } else if name_str.contains("mock") {
+                indicators.push(TestIndicator::NamingConvention("mock in name".to_string()));
+                confidence += 0.2;
+                if test_type == TestFileType::NotTest {
+                    test_type = TestFileType::MockFile;
+                }
+            } else if name_str.contains("fixture") {
+                indicators.push(TestIndicator::NamingConvention("fixture in name".to_string()));
+                confidence += 0.2;
+                if test_type == TestFileType::NotTest {
+                    test_type = TestFileType::MockFile;
+                }
+            } else if name_str.contains("example") || name_str.contains("demo") {
+                indicators.push(TestIndicator::NamingConvention("example/demo in name".to_string()));
+                confidence += 0.1;
+                if test_type == TestFileType::NotTest {
+                    test_type = TestFileType::ExampleCode;
+                }
+            }
+        }
+
+        // Check for common test path keywords
+        let test_keywords = [
+            "test", "spec", "__tests__", "integration", "e2e", 
+            "benchmark", "mock", "fixture", "example"
+        ];
+        
+        for keyword in &test_keywords {
+            if path_lower.contains(keyword) {
+                indicators.push(TestIndicator::PathKeyword(keyword.to_string()));
+                confidence += 0.1;
+            }
+        }
+
+        TestAnalysisResult {
+            indicators,
+            confidence,
+            test_type,
+        }
+    }
+
+    /// Analyzes file content for test indicators.
+    fn analyze_file_content(&self, content: &str, file_path: &str) -> TestAnalysisResult {
+        let mut indicators = Vec::new();
+        let mut confidence = 0.0;
+        let mut test_type = TestFileType::NotTest;
+
+        let content_lower = content.to_lowercase();
+        let lines: Vec<&str> = content.lines().collect();
+        
+        // Detect file language for framework-specific patterns
+        let language = self.detect_language_from_path(file_path);
+        
+        // Language-specific test framework detection
+        match language {
+            SupportedLanguage::Rust => {
+                self.analyze_rust_test_content(&content_lower, &lines, &mut indicators, &mut confidence, &mut test_type);
+            }
+            SupportedLanguage::Python => {
+                self.analyze_python_test_content(&content_lower, &lines, &mut indicators, &mut confidence, &mut test_type);
+            }
+            SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => {
+                self.analyze_js_test_content(&content_lower, &lines, &mut indicators, &mut confidence, &mut test_type);
+            }
+            SupportedLanguage::Go => {
+                self.analyze_go_test_content(&content_lower, &lines, &mut indicators, &mut confidence, &mut test_type);
+            }
+            _ => {
+                // Generic test pattern detection
+                self.analyze_generic_test_content(&content_lower, &lines, &mut indicators, &mut confidence, &mut test_type);
+            }
+        }
+
+        TestAnalysisResult {
+            indicators,
+            confidence,
+            test_type,
+        }
+    }
+
+    /// Detects programming language from file path.
+    fn detect_language_from_path(&self, file_path: &str) -> SupportedLanguage {
+        let path = std::path::Path::new(file_path);
+        if let Some(extension) = path.extension() {
+            match extension.to_string_lossy().to_lowercase().as_str() {
+                "rs" => SupportedLanguage::Rust,
+                "py" => SupportedLanguage::Python,
+                "js" | "jsx" => SupportedLanguage::JavaScript,
+                "ts" | "tsx" => SupportedLanguage::TypeScript,
+                "go" => SupportedLanguage::Go,
+                "c" => SupportedLanguage::C,
+                "cpp" | "cc" | "cxx" => SupportedLanguage::Cpp,
+                _ => SupportedLanguage::Rust, // Default fallback
+            }
+        } else {
+            SupportedLanguage::Rust // Default fallback
+        }
+    }
+
+    /// Analyzes Rust-specific test content.
+    fn analyze_rust_test_content(
+        &self,
+        content_lower: &str,
+        lines: &[&str],
+        indicators: &mut Vec<TestIndicator>,
+        confidence: &mut f64,
+        test_type: &mut TestFileType,
+    ) {
+        // Rust test attributes
+        if content_lower.contains("#[test]") {
+            indicators.push(TestIndicator::TestFramework("#[test] attribute".to_string()));
+            *confidence += 0.5;
+            *test_type = TestFileType::UnitTest;
+        }
+        if content_lower.contains("#[cfg(test)]") {
+            indicators.push(TestIndicator::TestFramework("#[cfg(test)] attribute".to_string()));
+            *confidence += 0.4;
+            *test_type = TestFileType::UnitTest;
+        }
+        if content_lower.contains("#[bench]") {
+            indicators.push(TestIndicator::TestFramework("#[bench] attribute".to_string()));
+            *confidence += 0.4;
+            *test_type = TestFileType::BenchmarkTest;
+        }
+        
+        // Common Rust test patterns
+        if content_lower.contains("assert_eq!") || content_lower.contains("assert!") || content_lower.contains("assert_ne!") {
+            indicators.push(TestIndicator::TestPattern("assert macros".to_string()));
+            *confidence += 0.3;
+        }
+        if content_lower.contains("mod tests") {
+            indicators.push(TestIndicator::TestPattern("mod tests".to_string()));
+            *confidence += 0.4;
+            *test_type = TestFileType::UnitTest;
+        }
+        
+        // Test-specific imports
+        for line in lines {
+            let line_lower = line.to_lowercase();
+            if line_lower.contains("use std::collections::HashMap;")
+                && (line_lower.contains("test") || content_lower.contains("#[test]")) {
+                // Skip - this is likely a false positive
+            } else if line_lower.starts_with("use") && (line_lower.contains("test") || line_lower.contains("mock")) {
+                indicators.push(TestIndicator::TestFramework("test/mock imports".to_string()));
+                *confidence += 0.2;
+            }
+        }
+    }
+
+    /// Analyzes Python-specific test content.
+    fn analyze_python_test_content(
+        &self,
+        content_lower: &str,
+        lines: &[&str],
+        indicators: &mut Vec<TestIndicator>,
+        confidence: &mut f64,
+        test_type: &mut TestFileType,
+    ) {
+        // Python test frameworks
+        if content_lower.contains("import unittest") || content_lower.contains("from unittest") {
+            indicators.push(TestIndicator::TestFramework("unittest framework".to_string()));
+            *confidence += 0.4;
+            *test_type = TestFileType::UnitTest;
+        }
+        if content_lower.contains("import pytest") || content_lower.contains("from pytest") {
+            indicators.push(TestIndicator::TestFramework("pytest framework".to_string()));
+            *confidence += 0.4;
+            *test_type = TestFileType::UnitTest;
+        }
+        if content_lower.contains("import doctest") {
+            indicators.push(TestIndicator::TestFramework("doctest framework".to_string()));
+            *confidence += 0.3;
+            *test_type = TestFileType::DocumentationTest;
+        }
+        
+        // Test method patterns
+        for line in lines {
+            let line_lower = line.trim().to_lowercase();
+            if line_lower.starts_with("def test_") {
+                indicators.push(TestIndicator::TestPattern("test_ method".to_string()));
+                *confidence += 0.3;
+                if *test_type == TestFileType::NotTest {
+                    *test_type = TestFileType::UnitTest;
+                }
+            }
+            if line_lower.contains("assert ") {
+                indicators.push(TestIndicator::TestPattern("assert statements".to_string()));
+                *confidence += 0.2;
+            }
+        }
+        
+        // Test class patterns
+        if content_lower.contains("class test") || content_lower.contains("(unittest.testcase)") {
+            indicators.push(TestIndicator::TestPattern("test class".to_string()));
+            *confidence += 0.3;
+            *test_type = TestFileType::UnitTest;
+        }
+    }
+
+    /// Analyzes JavaScript/TypeScript-specific test content.
+    fn analyze_js_test_content(
+        &self,
+        content_lower: &str,
+        _lines: &[&str],
+        indicators: &mut Vec<TestIndicator>,
+        confidence: &mut f64,
+        test_type: &mut TestFileType,
+    ) {
+        // JavaScript test frameworks
+        let test_frameworks = [
+            "jest", "mocha", "jasmine", "vitest", "ava", "tape", "qunit"
+        ];
+        
+        for framework in &test_frameworks {
+            if content_lower.contains(&format!("import {}", framework)) ||
+               content_lower.contains(&format!("require('{}')", framework)) ||
+               content_lower.contains(&format!("require(\"{}\")", framework)) {
+                indicators.push(TestIndicator::TestFramework(format!("{} framework", framework)));
+                *confidence += 0.4;
+                *test_type = TestFileType::UnitTest;
+            }
+        }
+        
+        // Common test functions
+        let test_functions = [
+            "describe(", "it(", "test(", "expect(", "beforeeach(", "aftereach("
+        ];
+        
+        for func in &test_functions {
+            if content_lower.contains(func) {
+                indicators.push(TestIndicator::TestPattern(format!("test function: {}", func)));
+                *confidence += 0.3;
+                if *test_type == TestFileType::NotTest {
+                    *test_type = TestFileType::UnitTest;
+                }
+            }
+        }
+    }
+
+    /// Analyzes Go-specific test content.
+    fn analyze_go_test_content(
+        &self,
+        content_lower: &str,
+        lines: &[&str],
+        indicators: &mut Vec<TestIndicator>,
+        confidence: &mut f64,
+        test_type: &mut TestFileType,
+    ) {
+        // Go test imports
+        if content_lower.contains("import \"testing\"") {
+            indicators.push(TestIndicator::TestFramework("testing package".to_string()));
+            *confidence += 0.4;
+            *test_type = TestFileType::UnitTest;
+        }
+        
+        // Go test function patterns
+        for line in lines {
+            let line_lower = line.trim().to_lowercase();
+            if line_lower.starts_with("func test") && line_lower.contains("*testing.t") {
+                indicators.push(TestIndicator::TestPattern("TestXxx function".to_string()));
+                *confidence += 0.4;
+                *test_type = TestFileType::UnitTest;
+            }
+            if line_lower.starts_with("func benchmark") && line_lower.contains("*testing.b") {
+                indicators.push(TestIndicator::TestPattern("BenchmarkXxx function".to_string()));
+                *confidence += 0.4;
+                *test_type = TestFileType::BenchmarkTest;
+            }
+        }
+    }
+
+    /// Analyzes generic test content patterns.
+    fn analyze_generic_test_content(
+        &self,
+        content_lower: &str,
+        _lines: &[&str],
+        indicators: &mut Vec<TestIndicator>,
+        confidence: &mut f64,
+        test_type: &mut TestFileType,
+    ) {
+        // Generic test keywords
+        let test_keywords = [
+            "test", "assert", "mock", "fixture", "setup", "teardown",
+            "before", "after", "expect", "should", "verify"
+        ];
+        
+        let mut keyword_count = 0;
+        for keyword in &test_keywords {
+            if content_lower.contains(keyword) {
+                keyword_count += 1;
+            }
+        }
+        
+        if keyword_count >= 3 {
+            indicators.push(TestIndicator::TestPattern(format!("generic test keywords ({})", keyword_count)));
+            *confidence += 0.2;
+            if *test_type == TestFileType::NotTest {
+                *test_type = TestFileType::Unknown;
+            }
+        }
+    }
+
+    /// Adjusts detection severity based on test context.
+    pub fn adjust_severity_for_test_context(
+        &self,
+        original_severity: Severity,
+        test_context: &TestContext,
+        rule_id: &str,
+    ) -> (Severity, bool) {
+        if !test_context.is_test_file {
+            return (original_severity, false);
+        }
+
+        // Define rules that should be suppressed in test files
+        let suppress_in_tests = [
+            "todo_pattern",
+            "unimplemented_pattern",
+            "debug_print",
+            "hardcoded_values",
+            "magic_numbers",
+            "unused_variables", // Often acceptable in test setup
+            "code_duplication", // Test cases often have similar structure
+        ];
+
+        let should_suppress = suppress_in_tests.iter().any(|&rule| rule_id.contains(rule));
+        
+        if should_suppress {
+            return (Severity::Info, true); // Downgrade to info level
+        }
+
+        // Adjust severity based on test type and original severity
+        let adjusted_severity = match (original_severity, &test_context.test_type) {
+            // Keep critical issues even in tests
+            (Severity::Critical, _) => Severity::High,
+            
+            // Reduce high severity in test files
+            (Severity::High, TestFileType::UnitTest) => Severity::Medium,
+            (Severity::High, TestFileType::MockFile) => Severity::Low,
+            (Severity::High, TestFileType::ExampleCode) => Severity::Low,
+            
+            // Reduce medium severity in test files
+            (Severity::Medium, TestFileType::UnitTest) => Severity::Low,
+            (Severity::Medium, TestFileType::MockFile) => Severity::Info,
+            (Severity::Medium, TestFileType::ExampleCode) => Severity::Info,
+            
+            // Keep low/info as is, or reduce further
+            (Severity::Low, TestFileType::MockFile) => Severity::Info,
+            (Severity::Low, TestFileType::ExampleCode) => Severity::Info,
+            
+            // Keep info level as is
+            (Severity::Info, _) => Severity::Info,
+            
+            // Default: reduce by one level
+            (sev, _) => match sev {
+                Severity::Critical => Severity::High,
+                Severity::High => Severity::Medium,
+                Severity::Medium => Severity::Low,
+                Severity::Low => Severity::Info,
+                Severity::Info => Severity::Info,
+            },
+        };
+
+        (adjusted_severity, false)
+    }
+
+    /// Clears the classification cache.
+    pub fn clear_cache(&self) {
+        if let Ok(mut cache) = self.classification_cache.write() {
+            cache.clear();
+        }
+    }
+
+    /// Returns the size of the classification cache.
+    #[must_use]
+    pub fn cache_size(&self) -> usize {
+        self.classification_cache.read().map_or(0, |cache| cache.len())
+    }
+}
+
+impl BullshitAnalyzer {
+    /// Simple test file detection for parallel processing (path-based only).
+    fn is_test_file_simple(file_path: &str) -> bool {
+        let path_lower = file_path.to_lowercase();
+        
+        // Check for test-related keywords in path
+        path_lower.contains("test") || 
+        path_lower.contains("spec") ||
+        path_lower.contains("__tests__") ||
+        path_lower.contains("mock") ||
+        path_lower.contains("fixture") ||
+        path_lower.contains("example") ||
+        path_lower.contains("demo")
+    }
+    
+    /// Simple severity adjustment for test files.
+    fn adjust_severity_for_test_simple(original_severity: Severity, rule_id: &str) -> (Severity, bool) {
+        // Define rules that should be suppressed in test files
+        let suppress_in_tests = [
+            "todo_pattern",
+            "unimplemented_pattern", 
+            "debug_print",
+            "hardcoded_values",
+            "magic_numbers",
+            "unused_variables",
+            "code_duplication",
+        ];
+        
+        let should_suppress = suppress_in_tests.iter().any(|&rule| rule_id.contains(rule));
+        
+        if should_suppress {
+            return (Severity::Info, true);
+        }
+        
+        // Reduce severity by one level for test files
+        let adjusted_severity = match original_severity {
+            Severity::Critical => Severity::High,
+            Severity::High => Severity::Medium,
+            Severity::Medium => Severity::Low,
+            Severity::Low => Severity::Info,
+            Severity::Info => Severity::Info,
+        };
+        
+        (adjusted_severity, false)
+    }
+}
+
+/// Helper struct for test analysis results.
+struct TestAnalysisResult {
+    indicators: Vec<TestIndicator>,
+    confidence: f64,
+    test_type: TestFileType,
+}
+
 /// Result of semantic context analysis containing symbol tables, data flow, and security context.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SemanticContextResult {
@@ -219,6 +880,8 @@ pub struct BullshitAnalyzer {
     /// Cache for compiled regex patterns.
     #[allow(dead_code)]
     compiled_patterns: HashMap<String, Regex>,
+    /// Test file classifier for identifying test files and adjusting severity.
+    test_classifier: TestFileClassifier,
 }
 
 impl BullshitAnalyzer {
@@ -265,6 +928,7 @@ impl BullshitAnalyzer {
             parser,
             playbook_manager,
             compiled_patterns: HashMap::new(),
+            test_classifier: TestFileClassifier::new(),
         })
     }
 
@@ -329,6 +993,7 @@ impl BullshitAnalyzer {
             parser,
             playbook_manager,
             compiled_patterns: HashMap::new(),
+            test_classifier: TestFileClassifier::new(),
         })
     }
 
@@ -630,6 +1295,10 @@ impl BullshitAnalyzer {
                 Severity::Low => {
                     maintainability_score -= 2.0;
                 }
+                Severity::Info => {
+                    // Info level detections have minimal impact
+                    maintainability_score -= 0.5;
+                }
             }
         }
 
@@ -768,6 +1437,10 @@ impl BullshitAnalyzer {
                 Severity::Low => {
                     maintainability_score -= 2.0;
                 }
+                Severity::Info => {
+                    // Info level detections have minimal impact
+                    maintainability_score -= 0.5;
+                }
             }
         }
 
@@ -894,15 +1567,14 @@ impl BullshitAnalyzer {
     ///
     /// Returns an error if any file cannot be read or analyzed.
     pub fn analyze_files_parallel(
-        &mut self,
+        &self,
         file_paths: &[&Path],
     ) -> Result<Vec<BullshitDetection>> {
         // Create a thread-safe collection of all detections
         let all_detections: std::result::Result<Vec<_>, SniffError> = file_paths
             .par_iter()
             .map(|&file_path| -> Result<Vec<BullshitDetection>> {
-                // Each thread needs its own analysis to avoid borrowing issues
-                self.analyze_single_file_parallel(file_path)
+                Self::analyze_single_file_static(file_path, &self.playbook_manager, &self.test_classifier)
             })
             .collect();
 
@@ -947,11 +1619,12 @@ impl BullshitAnalyzer {
         let rule_results: std::result::Result<Vec<_>, SniffError> = rules
             .par_iter()
             .map(|rule| -> Result<Vec<BullshitDetection>> {
-                self.apply_rule_to_file_with_path_parallel(
+                Self::apply_rule_to_file_static(
                     rule,
                     &file_info,
                     &file_content,
                     file_path,
+                    &self.test_classifier,
                 )
             })
             .collect();
@@ -998,12 +1671,41 @@ impl BullshitAnalyzer {
                     for regex_match in regex.find_iter(line) {
                         let context_lines = Self::extract_context_lines(&file_lines, line_num);
 
+                        // Classify file for test context
+                        let file_path_str = file_path.to_string_lossy().to_string();
+                        let mut test_context = TestContext {
+                            is_test_file: false,
+                            confidence: 0.0,
+                            test_type: TestFileType::NotTest,
+                            indicators: Vec::new(),
+                            adjusted_severity: rule.severity,
+                            should_suppress: false,
+                        };
+                        
+                        // This is a simplified test classification for parallel processing
+                        // We only do basic path-based detection to avoid thread safety issues
+                        let is_test_file = Self::is_test_file_simple(&file_path_str);
+                        if is_test_file {
+                            test_context.is_test_file = true;
+                            test_context.confidence = 0.8;
+                            test_context.test_type = TestFileType::UnitTest;
+                            test_context.indicators.push(TestIndicator::PathKeyword("test path".to_string()));
+                            
+                            // Adjust severity for test files
+                            let (adjusted_severity, should_suppress) = Self::adjust_severity_for_test_simple(
+                                rule.severity,
+                                &rule.id,
+                            );
+                            test_context.adjusted_severity = adjusted_severity;
+                            test_context.should_suppress = should_suppress;
+                        }
+
                         let detection = BullshitDetection {
                             rule_id: rule.id.clone(),
                             rule_name: rule.name.clone(),
                             description: rule.description.clone(),
-                            severity: rule.severity,
-                            file_path: file_path.to_string_lossy().to_string(),
+                            severity: test_context.adjusted_severity, // Use adjusted severity
+                            file_path: file_path_str,
                             line_number: line_num + 1,
                             column_number: regex_match.start() + 1,
                             code_snippet: (*line).to_string(),
@@ -1011,8 +1713,13 @@ impl BullshitAnalyzer {
                             context: format!("Line {}", line_num + 1),
                             tags: rule.tags.clone(),
                             performance_impact: None, // Will be filled in later if needed
+                            test_context: Some(test_context),
                         };
-                        detections.push(detection);
+                        
+                        // Skip suppressed detections in test files
+                        if !detection.test_context.as_ref().unwrap().should_suppress {
+                            detections.push(detection);
+                        }
                     }
                 }
             }
@@ -1091,11 +1798,9 @@ impl BullshitAnalyzer {
                 None => return Ok(all_detections), // Skip unsupported files
             };
 
-            // Get applicable rules for this language
-            let rules: Vec<_> = self
-                .playbook_manager
-                .get_active_rules_for_language(language)
-                .clone();
+            // Get applicable rules for this language (collect to avoid borrowing issues)
+            let rules: Vec<DetectionRule> = self.playbook_manager.get_active_rules_for_language(language)
+                .into_iter().cloned().collect();
 
             // Read the file content using the ORIGINAL absolute path
             let file_content = match std::fs::read_to_string(original_path) {
@@ -1111,9 +1816,9 @@ impl BullshitAnalyzer {
             };
 
             // Apply each rule to the file
-            for rule in &rules {
+            for rule in rules {
                 let rule_detections = self.apply_rule_to_file_with_path(
-                    rule,
+                    &rule,
                     file_info,
                     &file_content,
                     original_path,
@@ -1148,11 +1853,9 @@ impl BullshitAnalyzer {
                 None => continue, // Skip unsupported files
             };
 
-            // Get applicable rules for this language
-            let rules: Vec<_> = self
-                .playbook_manager
-                .get_active_rules_for_language(language)
-                .clone();
+            // Get applicable rules for this language (collect to avoid borrowing issues)
+            let rules: Vec<DetectionRule> = self.playbook_manager.get_active_rules_for_language(language)
+                .into_iter().cloned().collect();
 
             // Read the file content for pattern matching
             let file_content = match std::fs::read_to_string(&file_info.path) {
@@ -1168,8 +1871,8 @@ impl BullshitAnalyzer {
             };
 
             // Apply each rule to the file
-            for rule in &rules {
-                let rule_detections = self.apply_rule_to_file(rule, file_info, &file_content)?;
+            for rule in rules {
+                let rule_detections = self.apply_rule_to_file(&rule, file_info, &file_content)?;
                 all_detections.extend(rule_detections);
             }
         }
@@ -1179,7 +1882,7 @@ impl BullshitAnalyzer {
 
     /// Applies a single detection rule to a file with a specific path for error reporting.
     fn apply_rule_to_file_with_path(
-        &self,
+        &mut self,
         rule: &DetectionRule,
         file_info: &FileInfo,
         file_content: &str,
@@ -1198,7 +1901,7 @@ impl BullshitAnalyzer {
 
     /// Applies a single detection rule to a file.
     fn apply_rule_to_file(
-        &self,
+        &mut self,
         rule: &DetectionRule,
         file_info: &FileInfo,
         file_content: &str,
@@ -1254,7 +1957,7 @@ impl BullshitAnalyzer {
 
     /// Applies a regex pattern to the entire file content.
     fn apply_regex_to_file_content(
-        &self,
+        &mut self,
         regex: &Regex,
         rule: &DetectionRule,
         file_info: &FileInfo,
@@ -1264,20 +1967,39 @@ impl BullshitAnalyzer {
 
         for (line_num, line) in file_content.lines().enumerate() {
             for mat in regex.find_iter(line) {
-                detections.push(BullshitDetection {
-                    rule_id: rule.id.clone(),
-                    rule_name: rule.name.clone(),
-                    description: rule.description.clone(),
-                    severity: rule.severity,
-                    file_path: file_info.path.to_string_lossy().to_string(),
-                    line_number: line_num + 1,
-                    column_number: mat.start() + 1,
-                    code_snippet: mat.as_str().to_string(),
-                    context_lines: None,
-                    context: format!("Line {}", line_num + 1),
-                    tags: rule.tags.clone(),
-                    performance_impact: None,
-                });
+                // Get test context for this file
+                let file_path_str = file_info.path.to_string_lossy().to_string();
+                let test_context = self.test_classifier.classify_file(&file_path_str, Some(file_content));
+                
+                // Adjust severity based on test context
+                let (adjusted_severity, should_suppress) = self.test_classifier.adjust_severity_for_test_context(
+                    rule.severity,
+                    &test_context,
+                    &rule.id,
+                );
+                
+                // Skip suppressed detections
+                if !should_suppress {
+                    let mut final_test_context = test_context.clone();
+                    final_test_context.adjusted_severity = adjusted_severity;
+                    final_test_context.should_suppress = should_suppress;
+                    
+                    detections.push(BullshitDetection {
+                        rule_id: rule.id.clone(),
+                        rule_name: rule.name.clone(),
+                        description: rule.description.clone(),
+                        severity: adjusted_severity,
+                        file_path: file_path_str,
+                        line_number: line_num + 1,
+                        column_number: mat.start() + 1,
+                        code_snippet: mat.as_str().to_string(),
+                        context_lines: None,
+                        context: format!("Line {}", line_num + 1),
+                        tags: rule.tags.clone(),
+                        performance_impact: None,
+                        test_context: Some(final_test_context),
+                    });
+                }
             }
         }
 
@@ -1286,7 +2008,7 @@ impl BullshitAnalyzer {
 
     /// Applies a regex pattern to function bodies using symbol information.
     fn apply_regex_to_function_bodies(
-        &self,
+        &mut self,
         regex: &Regex,
         rule: &DetectionRule,
         file_info: &FileInfo,
@@ -1305,20 +2027,39 @@ impl BullshitAnalyzer {
                 for line_num in start_line..end_line {
                     if let Some(line) = lines.get(line_num) {
                         for mat in regex.find_iter(line) {
-                            detections.push(BullshitDetection {
-                                rule_id: rule.id.clone(),
-                                rule_name: rule.name.clone(),
-                                description: rule.description.clone(),
-                                severity: rule.severity,
-                                file_path: file_info.path.to_string_lossy().to_string(),
-                                line_number: line_num + 1,
-                                column_number: mat.start() + 1,
-                                code_snippet: mat.as_str().to_string(),
-                                context_lines: None,
-                                context: format!("Function: {}", symbol.name),
-                                tags: rule.tags.clone(),
-                                performance_impact: None,
-                            });
+                            // Get test context for this file
+                            let file_path_str = file_info.path.to_string_lossy().to_string();
+                            let test_context = self.test_classifier.classify_file(&file_path_str, Some(file_content));
+                            
+                            // Adjust severity based on test context
+                            let (adjusted_severity, should_suppress) = self.test_classifier.adjust_severity_for_test_context(
+                                rule.severity,
+                                &test_context,
+                                &rule.id,
+                            );
+                            
+                            // Skip suppressed detections
+                            if !should_suppress {
+                                let mut final_test_context = test_context.clone();
+                                final_test_context.adjusted_severity = adjusted_severity;
+                                final_test_context.should_suppress = should_suppress;
+                                
+                                detections.push(BullshitDetection {
+                                    rule_id: rule.id.clone(),
+                                    rule_name: rule.name.clone(),
+                                    description: rule.description.clone(),
+                                    severity: adjusted_severity,
+                                    file_path: file_path_str,
+                                    line_number: line_num + 1,
+                                    column_number: mat.start() + 1,
+                                    code_snippet: mat.as_str().to_string(),
+                                    context_lines: None,
+                                    context: format!("Function: {}", symbol.name),
+                                    tags: rule.tags.clone(),
+                                    performance_impact: None,
+                                    test_context: Some(final_test_context),
+                                });
+                            }
                         }
                     }
                 }
@@ -1330,7 +2071,7 @@ impl BullshitAnalyzer {
 
     /// Applies a regex pattern to class bodies using symbol information.
     fn apply_regex_to_class_bodies(
-        &self,
+        &mut self,
         regex: &Regex,
         rule: &DetectionRule,
         file_info: &FileInfo,
@@ -1349,20 +2090,39 @@ impl BullshitAnalyzer {
                 for line_num in start_line..end_line {
                     if let Some(line) = lines.get(line_num) {
                         for mat in regex.find_iter(line) {
-                            detections.push(BullshitDetection {
-                                rule_id: rule.id.clone(),
-                                rule_name: rule.name.clone(),
-                                description: rule.description.clone(),
-                                severity: rule.severity,
-                                file_path: file_info.path.to_string_lossy().to_string(),
-                                line_number: line_num + 1,
-                                column_number: mat.start() + 1,
-                                code_snippet: mat.as_str().to_string(),
-                                context_lines: None,
-                                context: format!("Class: {}", symbol.name),
-                                tags: rule.tags.clone(),
-                                performance_impact: None,
-                            });
+                            // Get test context for this file
+                            let file_path_str = file_info.path.to_string_lossy().to_string();
+                            let test_context = self.test_classifier.classify_file(&file_path_str, Some(file_content));
+                            
+                            // Adjust severity based on test context
+                            let (adjusted_severity, should_suppress) = self.test_classifier.adjust_severity_for_test_context(
+                                rule.severity,
+                                &test_context,
+                                &rule.id,
+                            );
+                            
+                            // Skip suppressed detections
+                            if !should_suppress {
+                                let mut final_test_context = test_context.clone();
+                                final_test_context.adjusted_severity = adjusted_severity;
+                                final_test_context.should_suppress = should_suppress;
+                                
+                                detections.push(BullshitDetection {
+                                    rule_id: rule.id.clone(),
+                                    rule_name: rule.name.clone(),
+                                    description: rule.description.clone(),
+                                    severity: adjusted_severity,
+                                    file_path: file_path_str,
+                                    line_number: line_num + 1,
+                                    column_number: mat.start() + 1,
+                                    code_snippet: mat.as_str().to_string(),
+                                    context_lines: None,
+                                    context: format!("Class: {}", symbol.name),
+                                    tags: rule.tags.clone(),
+                                    performance_impact: None,
+                                    test_context: Some(final_test_context),
+                                });
+                            }
                         }
                     }
                 }
@@ -1374,7 +2134,7 @@ impl BullshitAnalyzer {
 
     /// Applies a regex pattern to comments.
     fn apply_regex_to_comments(
-        &self,
+        &mut self,
         regex: &Regex,
         rule: &DetectionRule,
         file_info: &FileInfo,
@@ -1396,20 +2156,39 @@ impl BullshitAnalyzer {
 
             if is_comment {
                 for mat in regex.find_iter(line) {
-                    detections.push(BullshitDetection {
-                        rule_id: rule.id.clone(),
-                        rule_name: rule.name.clone(),
-                        description: rule.description.clone(),
-                        severity: rule.severity,
-                        file_path: file_info.path.to_string_lossy().to_string(),
-                        line_number: line_num + 1,
-                        column_number: mat.start() + 1,
-                        code_snippet: mat.as_str().to_string(),
-                        context_lines: None,
-                        context: "Comment".to_string(),
-                        tags: rule.tags.clone(),
-                        performance_impact: None,
-                    });
+                    // Get test context for this file
+                    let file_path_str = file_info.path.to_string_lossy().to_string();
+                    let test_context = self.test_classifier.classify_file(&file_path_str, Some(file_content));
+                    
+                    // Adjust severity based on test context
+                    let (adjusted_severity, should_suppress) = self.test_classifier.adjust_severity_for_test_context(
+                        rule.severity,
+                        &test_context,
+                        &rule.id,
+                    );
+                    
+                    // Skip suppressed detections
+                    if !should_suppress {
+                        let mut final_test_context = test_context.clone();
+                        final_test_context.adjusted_severity = adjusted_severity;
+                        final_test_context.should_suppress = should_suppress;
+                        
+                        detections.push(BullshitDetection {
+                            rule_id: rule.id.clone(),
+                            rule_name: rule.name.clone(),
+                            description: rule.description.clone(),
+                            severity: adjusted_severity,
+                            file_path: file_path_str,
+                            line_number: line_num + 1,
+                            column_number: mat.start() + 1,
+                            code_snippet: mat.as_str().to_string(),
+                            context_lines: None,
+                            context: "Comment".to_string(),
+                            tags: rule.tags.clone(),
+                            performance_impact: None,
+                            test_context: Some(final_test_context),
+                        });
+                    }
                 }
             }
         }
@@ -1419,7 +2198,7 @@ impl BullshitAnalyzer {
 
     /// Applies a regex pattern to method signatures using symbol information.
     fn apply_regex_to_method_signatures(
-        &self,
+        &mut self,
         regex: &Regex,
         rule: &DetectionRule,
         file_info: &FileInfo,
@@ -1436,20 +2215,39 @@ impl BullshitAnalyzer {
 
                 if let Some(line) = lines.get(signature_line_num) {
                     for mat in regex.find_iter(line) {
-                        detections.push(BullshitDetection {
-                            rule_id: rule.id.clone(),
-                            rule_name: rule.name.clone(),
-                            description: rule.description.clone(),
-                            severity: rule.severity,
-                            file_path: file_info.path.to_string_lossy().to_string(),
-                            line_number: signature_line_num + 1,
-                            column_number: mat.start() + 1,
-                            code_snippet: mat.as_str().to_string(),
-                            context_lines: None,
-                            context: format!("Method signature: {}", symbol.name),
-                            tags: rule.tags.clone(),
-                            performance_impact: None,
-                        });
+                        // Get test context for this file
+                        let file_path_str = file_info.path.to_string_lossy().to_string();
+                        let test_context = self.test_classifier.classify_file(&file_path_str, Some(file_content));
+                        
+                        // Adjust severity based on test context
+                        let (adjusted_severity, should_suppress) = self.test_classifier.adjust_severity_for_test_context(
+                            rule.severity,
+                            &test_context,
+                            &rule.id,
+                        );
+                        
+                        // Skip suppressed detections
+                        if !should_suppress {
+                            let mut final_test_context = test_context.clone();
+                            final_test_context.adjusted_severity = adjusted_severity;
+                            final_test_context.should_suppress = should_suppress;
+                            
+                            detections.push(BullshitDetection {
+                                rule_id: rule.id.clone(),
+                                rule_name: rule.name.clone(),
+                                description: rule.description.clone(),
+                                severity: adjusted_severity,
+                                file_path: file_path_str,
+                                line_number: signature_line_num + 1,
+                                column_number: mat.start() + 1,
+                                code_snippet: mat.as_str().to_string(),
+                                context_lines: None,
+                                context: format!("Method signature: {}", symbol.name),
+                                tags: rule.tags.clone(),
+                                performance_impact: None,
+                                test_context: Some(final_test_context),
+                            });
+                        }
                     }
                 }
             }
@@ -1462,6 +2260,176 @@ impl BullshitAnalyzer {
     #[must_use]
     pub fn get_ai_insights(&self, analysis_result: &AnalysisResult) -> AIAnalysisResult {
         self.ai_analyzer.analyze(analysis_result)
+    }
+
+    /// Static method for analyzing a single file in parallel processing.
+    fn analyze_single_file_static(
+        file_path: &Path,
+        playbook_manager: &PlaybookManager,
+        test_classifier: &TestFileClassifier,
+    ) -> Result<Vec<BullshitDetection>> {
+        // Read file content
+        let file_content = std::fs::read_to_string(file_path)
+            .map_err(|e| SniffError::file_system(file_path, e))?;
+
+        // Detect language
+        let language = detect_language_from_path(file_path.to_str().unwrap_or(""));
+        let language = match language {
+            Some(lang) => SupportedLanguage::from_agent_language(lang),
+            None => return Ok(Vec::new()), // Skip unsupported files
+        };
+
+        // Get applicable rules for this language
+        let rules = playbook_manager.get_active_rules_for_language(language);
+
+        // Create a minimal FileInfo for rule processing
+        let file_info = FileInfo {
+            path: file_path.to_path_buf(),
+            language: language.name().to_string(),
+            size: file_content.len(),
+            lines: file_content.lines().count(),
+            parsed_successfully: true,
+            parse_errors: Vec::new(),
+            symbols: Vec::new(),
+            security_vulnerabilities: Vec::new(),
+        };
+
+        // Apply rules sequentially in this context
+        let mut detections = Vec::new();
+        
+        for rule in rules {
+            let rule_detections = Self::apply_rule_to_file_static(
+                rule,
+                &file_info,
+                &file_content,
+                file_path,
+                test_classifier,
+            )?;
+            detections.extend(rule_detections);
+        }
+
+        Ok(detections)
+    }
+
+    /// Static method for applying a rule to a file in parallel processing.
+    fn apply_rule_to_file_static(
+        rule: &DetectionRule,
+        _file_info: &FileInfo,
+        file_content: &str,
+        file_path: &Path,
+        test_classifier: &TestFileClassifier,
+    ) -> Result<Vec<BullshitDetection>> {
+        let mut detections = Vec::new();
+
+        // Only handle regex patterns for now in parallel context
+        if let PatternType::Regex { pattern, .. } = &rule.pattern_type {
+            let regex = match Regex::new(pattern) {
+                Ok(r) => r,
+                Err(_) => return Ok(Vec::new()), // Skip invalid regex
+            };
+
+            // Apply regex based on scope
+            match rule.scope {
+                PatternScope::File => {
+                    for mat in regex.find_iter(file_content) {
+                        let line_info = Self::find_line_info(file_content, mat.start());
+                        let test_context = test_classifier.classify_file(
+                            &file_path.to_string_lossy(),
+                            Some(file_content)
+                        );
+                        
+                        let (adjusted_severity, should_suppress) = test_classifier.adjust_severity_for_test_context(
+                            rule.severity,
+                            &test_context,
+                            &rule.id,
+                        );
+                        
+                        if !should_suppress {
+                            let mut final_test_context = test_context.clone();
+                            final_test_context.adjusted_severity = adjusted_severity;
+                            final_test_context.should_suppress = should_suppress;
+                            
+                            detections.push(BullshitDetection {
+                                rule_id: rule.id.clone(),
+                                rule_name: rule.name.clone(),
+                                description: rule.description.clone(),
+                                severity: adjusted_severity,
+                                file_path: file_path.to_string_lossy().to_string(),
+                                line_number: line_info.0,
+                                column_number: line_info.1,
+                                code_snippet: mat.as_str().to_string(),
+                                context_lines: None,
+                                context: "File pattern".to_string(),
+                                tags: rule.tags.clone(),
+                                performance_impact: None,
+                                test_context: Some(final_test_context),
+                            });
+                        }
+                    }
+                }
+                _ => {
+                    // For other scopes, we'd need more complex parsing
+                    // For now, just apply to whole file
+                    for mat in regex.find_iter(file_content) {
+                        let line_info = Self::find_line_info(file_content, mat.start());
+                        let test_context = test_classifier.classify_file(
+                            &file_path.to_string_lossy(),
+                            Some(file_content)
+                        );
+                        
+                        let (adjusted_severity, should_suppress) = test_classifier.adjust_severity_for_test_context(
+                            rule.severity,
+                            &test_context,
+                            &rule.id,
+                        );
+                        
+                        if !should_suppress {
+                            let mut final_test_context = test_context.clone();
+                            final_test_context.adjusted_severity = adjusted_severity;
+                            final_test_context.should_suppress = should_suppress;
+                            
+                            detections.push(BullshitDetection {
+                                rule_id: rule.id.clone(),
+                                rule_name: rule.name.clone(),
+                                description: rule.description.clone(),
+                                severity: adjusted_severity,
+                                file_path: file_path.to_string_lossy().to_string(),
+                                line_number: line_info.0,
+                                column_number: line_info.1,
+                                code_snippet: mat.as_str().to_string(),
+                                context_lines: None,
+                                context: "Pattern match".to_string(),
+                                tags: rule.tags.clone(),
+                                performance_impact: None,
+                                test_context: Some(final_test_context),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(detections)
+    }
+
+    /// Helper method to find line and column information from byte offset.
+    fn find_line_info(content: &str, byte_offset: usize) -> (usize, usize) {
+        let mut line = 1;
+        let mut col = 1;
+        
+        for (i, ch) in content.char_indices() {
+            if i >= byte_offset {
+                break;
+            }
+            if ch == '\n' {
+                line += 1;
+                col = 1;
+            } else {
+                col += 1;
+            }
+        }
+        
+        (line, col)
     }
 }
 

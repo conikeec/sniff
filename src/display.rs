@@ -12,8 +12,7 @@
 use crate::analysis::{BullshitDetection, ContextLines};
 use crate::playbook::Severity;
 use colored::{Color, Colorize};
-use comfy_table::presets::UTF8_FULL;
-use comfy_table::{Attribute, Cell, CellAlignment, Color as TableColor, ContentArrangement, Table};
+use comfy_table::Color as TableColor;
 use console::Term;
 use std::path::Path;
 
@@ -60,8 +59,8 @@ impl BullshitDisplayFormatter {
     pub fn format_detection(&self, detection: &BullshitDetection) -> String {
         let term_width = self.get_current_terminal_width();
 
-        // For narrow terminals, use minimal format
-        if term_width < 100 {
+        // For very narrow terminals, use minimal format
+        if term_width < 60 {
             return self.format_detection_minimal(detection);
         }
 
@@ -140,15 +139,14 @@ impl BullshitDisplayFormatter {
 
         if self.use_colors {
             format!(
-                "   📁 {} {}:{}:{}",
-                "at".dimmed(),
+                "   at {}:{}:{}",
                 file_name.cyan(),
                 detection.line_number.to_string().yellow(),
                 detection.column_number.to_string().yellow()
             )
         } else {
             format!(
-                "   📁 at {}:{}:{}",
+                "   at {}:{}:{}",
                 file_name, detection.line_number, detection.column_number
             )
         }
@@ -235,14 +233,62 @@ impl BullshitDisplayFormatter {
         }
     }
 
-    /// Formats a simple code snippet without context.
+    /// Formats a code snippet with context lines.
     fn format_simple_snippet(&self, detection: &BullshitDetection) -> String {
-        let trimmed = detection.code_snippet.trim();
-        if self.use_colors {
-            format!("   💻 {}", trimmed.yellow())
-        } else {
-            format!("   💻 {trimmed}")
+        // Try to get context lines from the detection first
+        if let Some(context) = &detection.context_lines {
+            return self.format_code_context(context, detection);
         }
+        
+        // If no context available, try to extract from file
+        if let Ok(file_content) = std::fs::read_to_string(&detection.file_path) {
+            let lines: Vec<&str> = file_content.lines().collect();
+            let target_line = detection.line_number.saturating_sub(1); // Convert to 0-based
+            
+            if target_line < lines.len() {
+                // Extract context: 2 lines before and after
+                let start = target_line.saturating_sub(2);
+                let end = (target_line + 3).min(lines.len());
+                
+                let before: Vec<String> = lines[start..target_line].iter().map(|s| s.to_string()).collect();
+                let target = lines[target_line].to_string();
+                let after: Vec<String> = lines[target_line + 1..end].iter().map(|s| s.to_string()).collect();
+                
+                let context = ContextLines {
+                    before,
+                    target,
+                    after,
+                    start_line: start + 1, // Convert back to 1-based
+                };
+                
+                return self.format_code_context(&context, detection);
+            }
+        }
+        
+        // Fallback: simple box format
+        let trimmed = detection.code_snippet.trim();
+        let term_width = self.get_current_terminal_width();
+        let box_width = term_width.saturating_sub(6).min(80);
+        
+        let top_border = if self.use_colors {
+            format!("   ┌{}┐", "─".repeat(box_width.saturating_sub(2)).dimmed())
+        } else {
+            format!("   ┌{}┐", "─".repeat(box_width.saturating_sub(2)))
+        };
+        
+        let bottom_border = if self.use_colors {
+            format!("   └{}┘", "─".repeat(box_width.saturating_sub(2)).dimmed())
+        } else {
+            format!("   └{}┘", "─".repeat(box_width.saturating_sub(2)))
+        };
+        
+        let code_line = if self.use_colors {
+            format!("   │ {} │", trimmed.yellow())
+        } else {
+            format!("   │ {} │", trimmed)
+        };
+        
+        format!("{}\n{}\n{}", top_border, code_line, bottom_border)
     }
 
     /// Formats the description and any recommendations.
@@ -250,19 +296,19 @@ impl BullshitDisplayFormatter {
         let mut output = String::new();
 
         if self.use_colors {
-            output.push_str(&format!("   📝 {}\n", detection.description.white()));
+            output.push_str(&format!("   {}\n", detection.description.white()));
         } else {
-            output.push_str(&format!("   📝 {}\n", detection.description));
+            output.push_str(&format!("   {}\n", detection.description));
         }
 
         // Add performance impact if available
         if let Some(impact) = &detection.performance_impact {
-            output.push_str(&format!("   ⚡ Impact: {}\n", impact.description));
+            output.push_str(&format!("   Impact: {}\n", impact.description));
             for recommendation in &impact.recommendations {
                 if self.use_colors {
-                    output.push_str(&format!("      💡 {}\n", recommendation.green()));
+                    output.push_str(&format!("      {}\n", recommendation.green()));
                 } else {
-                    output.push_str(&format!("      💡 {recommendation}\n"));
+                    output.push_str(&format!("      {recommendation}\n"));
                 }
             }
         }
@@ -273,10 +319,11 @@ impl BullshitDisplayFormatter {
     /// Gets the appropriate icon for a severity level.
     fn get_severity_icon(&self, severity: &Severity) -> &'static str {
         match severity {
-            Severity::Critical => "🚨",
-            Severity::High => "🔴",
-            Severity::Medium => "🟡",
-            Severity::Low => "🔵",
+            Severity::Critical => "[CRIT]",
+            Severity::High => "[HIGH]",
+            Severity::Medium => "[MED]",
+            Severity::Low => "[LOW]",
+            Severity::Info => "[INFO]",
         }
     }
 
@@ -287,6 +334,7 @@ impl BullshitDisplayFormatter {
             Severity::High => Color::Red,
             Severity::Medium => Color::Yellow,
             Severity::Low => Color::Blue,
+            Severity::Info => Color::Cyan,
         }
     }
 
@@ -300,20 +348,20 @@ impl BullshitDisplayFormatter {
 
         if detection_count == 0 {
             if self.use_colors {
-                format!("✅ {} - No issues found", file_name.green().bold())
+                format!("● {} - No issues found", file_name.green().bold())
             } else {
-                format!("✅ {file_name} - No issues found")
+                format!("● {file_name} - No issues found")
             }
         } else if self.use_colors {
             format!(
-                "💩 {} - {} issue{} found",
+                "▲ {} - {} issue{} found",
                 file_name.red().bold(),
                 detection_count.to_string().red().bold(),
                 if detection_count == 1 { "" } else { "s" }
             )
         } else {
             format!(
-                "💩 {} - {} issue{} found",
+                "▲ {} - {} issue{} found",
                 file_name,
                 detection_count,
                 if detection_count == 1 { "" } else { "s" }
@@ -369,9 +417,9 @@ impl BullshitDisplayFormatter {
         let term_width = self.get_current_terminal_width();
 
         // Determine layout based on terminal width
-        if term_width < 80 {
+        if term_width < 60 {
             self.format_detections_minimal(detections)
-        } else if term_width < 120 {
+        } else if term_width < 100 {
             self.format_detections_compact(detections)
         } else {
             self.format_detections_full(detections)
@@ -410,46 +458,49 @@ impl BullshitDisplayFormatter {
 
     /// Compact format for medium terminals (60-100 chars).
     fn format_detections_compact(&self, detections: &[BullshitDetection]) -> String {
-        let mut table = Table::new();
-        table.set_content_arrangement(ContentArrangement::Dynamic);
-
-        if self.use_colors {
-            table.load_preset(UTF8_FULL);
-        }
-
-        // Add header
-        table.set_header(vec![
-            Cell::new("Severity").add_attribute(Attribute::Bold),
-            Cell::new("Rule").add_attribute(Attribute::Bold),
-            Cell::new("Line").add_attribute(Attribute::Bold),
-            Cell::new("Code").add_attribute(Attribute::Bold),
-        ]);
-
+        let mut output = String::new();
+        
         for detection in detections {
-            let severity_cell = if self.use_colors {
-                Cell::new(format!(
-                    "{} {}",
-                    self.get_severity_icon(&detection.severity),
-                    detection.severity.name()
-                ))
-                .fg(self.get_table_color(&detection.severity))
-            } else {
-                Cell::new(format!(
-                    "{} {}",
-                    self.get_severity_icon(&detection.severity),
-                    detection.severity.name()
-                ))
-            };
+            output.push_str(&self.format_detection_beautiful(detection));
+            output.push('\n');
+        }
+        
+        output
+    }
 
-            table.add_row(vec![
-                severity_cell,
-                Cell::new(&detection.rule_name),
-                Cell::new(detection.line_number.to_string()).set_alignment(CellAlignment::Right),
-                Cell::new(detection.code_snippet.trim()),
-            ]);
+    /// Beautiful individual detection format with boxes.
+    fn format_detection_beautiful(&self, detection: &BullshitDetection) -> String {
+        let mut output = String::new();
+
+        // Severity and rule header
+        let severity_label = self.get_severity_icon(&detection.severity);
+        if self.use_colors {
+            let severity_color = self.get_severity_color(&detection.severity);
+            output.push_str(&format!(
+                "{}  {}\n",
+                severity_label.color(severity_color).bold(),
+                detection.rule_name.bold()
+            ));
+        } else {
+            output.push_str(&format!(
+                "{}  {}\n",
+                severity_label,
+                detection.rule_name
+            ));
         }
 
-        table.to_string()
+        // File location
+        output.push_str(&self.format_location(detection));
+        output.push('\n');
+
+        // Code snippet with box
+        output.push_str(&self.format_simple_snippet(detection));
+        output.push('\n');
+
+        // Description
+        output.push_str(&self.format_description(detection));
+
+        output
     }
 
     /// Full format for wide terminals (>= 100 chars).
@@ -457,7 +508,7 @@ impl BullshitDisplayFormatter {
         let mut output = String::new();
 
         for detection in detections {
-            output.push_str(&self.format_detection(detection));
+            output.push_str(&self.format_detection_beautiful(detection));
             output.push('\n');
         }
 
@@ -483,13 +534,14 @@ impl BullshitDisplayFormatter {
         output.push_str(&header);
         output.push('\n');
 
-        if term_width < 80 {
+        if term_width < 60 {
             // Minimal: Just show count and most severe
             let most_severe = detections.iter().max_by_key(|d| match d.severity {
                 Severity::Critical => 4,
                 Severity::High => 3,
                 Severity::Medium => 2,
                 Severity::Low => 1,
+                Severity::Info => 0,
             });
 
             if let Some(severe) = most_severe {
@@ -515,6 +567,7 @@ impl BullshitDisplayFormatter {
             Severity::High => TableColor::Red,
             Severity::Medium => TableColor::Yellow,
             Severity::Low => TableColor::Blue,
+            Severity::Info => TableColor::Cyan,
         }
     }
 

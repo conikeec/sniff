@@ -13,6 +13,8 @@ use std::path::Path;
 /// Severity level for detected bullshit patterns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Severity {
+    /// Informational severity - minor notes that don't require action
+    Info,
     /// Low severity issues - minor code quality concerns
     Low,
     /// Medium severity issues - moderate code quality problems
@@ -28,6 +30,7 @@ impl Severity {
     #[must_use]
     pub fn score(&self) -> u8 {
         match self {
+            Severity::Info => 0,
             Severity::Low => 1,
             Severity::Medium => 2,
             Severity::High => 3,
@@ -39,6 +42,7 @@ impl Severity {
     #[must_use]
     pub fn emoji(&self) -> &'static str {
         match self {
+            Severity::Info => "ℹ️",
             Severity::Low => "🟢",
             Severity::Medium => "🟡",
             Severity::High => "🔴",
@@ -50,6 +54,7 @@ impl Severity {
     #[must_use]
     pub fn name(&self) -> &'static str {
         match self {
+            Severity::Info => "Info",
             Severity::Low => "Low",
             Severity::Medium => "Medium",
             Severity::High => "High",
