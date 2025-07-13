@@ -9,21 +9,21 @@ fn main() -> Result<()> {
 
     // Create the analyzer
     let mut analyzer = BullshitAnalyzer::new()?;
-    
+
     // The analyzer automatically loads default playbooks
     println!("📚 Default playbooks loaded automatically");
-    
+
     // Test language detection first
     println!("\n🔍 Testing language detection:");
     let rust_file = Path::new("test_bullshit.rs");
     let python_file = Path::new("test_bullshit.py");
-    
+
     if let Ok(Some(lang)) = analyzer.detect_language(rust_file) {
         println!("✅ Detected {} for {}", lang.name(), rust_file.display());
     } else {
         println!("❌ Failed to detect language for {}", rust_file.display());
     }
-    
+
     if let Ok(Some(lang)) = analyzer.detect_language(python_file) {
         println!("✅ Detected {} for {}", lang.name(), python_file.display());
     } else {
@@ -36,7 +36,8 @@ fn main() -> Result<()> {
         Ok(detections) => {
             println!("Found {} bullshit patterns:", detections.len());
             for detection in &detections {
-                println!("  🚨 {} ({}:{}): {}", 
+                println!(
+                    "  🚨 {} ({}:{}): {}",
                     detection.severity.emoji(),
                     detection.line_number,
                     detection.column_number,
@@ -58,7 +59,8 @@ fn main() -> Result<()> {
         Ok(detections) => {
             println!("Found {} bullshit patterns:", detections.len());
             for detection in &detections {
-                println!("  🚨 {} ({}:{}): {}", 
+                println!(
+                    "  🚨 {} ({}:{}): {}",
                     detection.severity.emoji(),
                     detection.line_number,
                     detection.column_number,
@@ -79,18 +81,22 @@ fn main() -> Result<()> {
     match analyzer.analyze_directory(Path::new("src")) {
         Ok(detections) => {
             println!("Found {} bullshit patterns in src/:", detections.len());
-            
+
             // Group by file for better readability
             let mut by_file = std::collections::HashMap::new();
             for detection in detections {
-                by_file.entry(detection.file_path.clone()).or_insert_with(Vec::new).push(detection);
+                by_file
+                    .entry(detection.file_path.clone())
+                    .or_insert_with(Vec::new)
+                    .push(detection);
             }
-            
+
             for (file_path, file_detections) in by_file {
                 if !file_detections.is_empty() {
                     println!("\n  📄 {}:", file_path);
                     for detection in file_detections {
-                        println!("    🚨 {} Line {}: {}", 
+                        println!(
+                            "    🚨 {} Line {}: {}",
                             detection.severity.emoji(),
                             detection.line_number,
                             detection.rule_name

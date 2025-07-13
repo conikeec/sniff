@@ -7,7 +7,7 @@
 //! including utilities for computing hashes of various data types and
 //! creating deterministic content hashes.
 
-use crate::error::{SniffError, Result};
+use crate::error::{Result, SniffError};
 use blake3::{Hash, Hasher};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -17,7 +17,7 @@ use std::fmt;
 pub struct Blake3Hash([u8; 32]);
 
 impl Blake3Hash {
-    /// Creates a new Blake3Hash from a 32-byte array.
+    /// Creates a new `Blake3Hash` from a 32-byte array.
     #[must_use]
     pub fn new(bytes: [u8; 32]) -> Self {
         Self(bytes)
@@ -41,7 +41,7 @@ impl Blake3Hash {
         hex::encode(self.0)
     }
 
-    /// Parses a hexadecimal string into a Blake3Hash.
+    /// Parses a hexadecimal string into a `Blake3Hash`.
     ///
     /// # Errors
     ///
@@ -53,9 +53,8 @@ impl Blake3Hash {
             ));
         }
 
-        let bytes = hex::decode(hex_str).map_err(|e| {
-            SniffError::hash_computation(format!("Invalid hex string: {e}"))
-        })?;
+        let bytes = hex::decode(hex_str)
+            .map_err(|e| SniffError::hash_computation(format!("Invalid hex string: {e}")))?;
 
         let mut hash_bytes = [0u8; 32];
         hash_bytes.copy_from_slice(&bytes);
@@ -123,17 +122,17 @@ impl HashUtils {
 
     /// Computes a hash from multiple input hashes (for Merkle tree internal nodes).
     #[must_use]
-    pub fn hash_combine(hashes: &[Blake3Hash]) -> Blake3Hash {
+    pub fn hash_combine(hash_list: &[Blake3Hash]) -> Blake3Hash {
         let mut hasher = Hasher::new();
-        
+
         // Add a domain separator to prevent length extension attacks
         hasher.update(b"MERKLE_COMBINE:");
-        hasher.update(&(hashes.len() as u64).to_le_bytes());
-        
-        for hash in hashes {
+        hasher.update(&(hash_list.len() as u64).to_le_bytes());
+
+        for hash in hash_list {
             hasher.update(hash.as_bytes());
         }
-        
+
         hasher.finalize().into()
     }
 
@@ -147,40 +146,47 @@ impl HashUtils {
     /// Returns an error if the message cannot be processed for hashing.
     pub fn hash_message_content(message: &crate::types::ClaudeMessage) -> Result<Blake3Hash> {
         use crate::types::ClaudeMessage;
-        
+
         let mut hasher = Hasher::new();
-        
+
         // Add domain separator
         hasher.update(b"CLAUDE_MESSAGE:");
-        
+
         // Hash stable content based on message type
         match message {
             ClaudeMessage::User(user_msg) => {
                 hasher.update(b"USER:");
                 hasher.update(user_msg.base.uuid.as_bytes());
-                
+
                 if let Some(ref parent) = user_msg.base.parent_uuid {
                     hasher.update(b"PARENT:");
                     hasher.update(parent.as_bytes());
                 }
-                
+
                 hasher.update(b"CONTENT:");
-                let content_bytes = serde_json::to_vec(&user_msg.message.content)
-                    .map_err(|e| SniffError::hash_computation(format!("Failed to serialize user message content: {e}")))?;
+                let content_bytes = serde_json::to_vec(&user_msg.message.content).map_err(|e| {
+                    SniffError::hash_computation(format!(
+                        "Failed to serialize user message content: {e}"
+                    ))
+                })?;
                 hasher.update(&content_bytes);
             }
             ClaudeMessage::Assistant(assistant_msg) => {
                 hasher.update(b"ASSISTANT:");
                 hasher.update(assistant_msg.base.uuid.as_bytes());
-                
+
                 if let Some(ref parent) = assistant_msg.base.parent_uuid {
                     hasher.update(b"PARENT:");
                     hasher.update(parent.as_bytes());
                 }
-                
+
                 hasher.update(b"CONTENT:");
-                let content_bytes = serde_json::to_vec(&assistant_msg.message.content)
-                    .map_err(|e| SniffError::hash_computation(format!("Failed to serialize assistant message content: {e}")))?;
+                let content_bytes =
+                    serde_json::to_vec(&assistant_msg.message.content).map_err(|e| {
+                        SniffError::hash_computation(format!(
+                            "Failed to serialize assistant message content: {e}"
+                        ))
+                    })?;
                 hasher.update(&content_bytes);
             }
             ClaudeMessage::Summary(summary_msg) => {
@@ -190,7 +196,7 @@ impl HashUtils {
                 hasher.update(summary_msg.summary.as_bytes());
             }
         }
-        
+
         Ok(hasher.finalize().into())
     }
 
@@ -201,31 +207,32 @@ impl HashUtils {
     /// Returns an error if the operation cannot be processed for hashing.
     pub fn hash_operation(operation: &crate::operations::Operation) -> Result<Blake3Hash> {
         let mut hasher = Hasher::new();
-        
+
         // Add domain separator
         hasher.update(b"OPERATION:");
-        
+
         // Hash stable operation fields
         hasher.update(operation.tool_use_id.as_bytes());
         hasher.update(operation.tool_name.as_bytes());
         hasher.update(operation.message_uuid.as_bytes());
-        
+
         // Hash operation type
-        let op_type_bytes = serde_json::to_vec(&operation.operation_type)
-            .map_err(|e| SniffError::hash_computation(format!("Failed to serialize operation type: {e}")))?;
+        let op_type_bytes = serde_json::to_vec(&operation.operation_type).map_err(|e| {
+            SniffError::hash_computation(format!("Failed to serialize operation type: {e}"))
+        })?;
         hasher.update(&op_type_bytes);
-        
+
         // Hash file paths
         for path in &operation.file_paths {
             hasher.update(path.to_string_lossy().as_bytes());
         }
-        
+
         // Hash command if present
         if let Some(ref command) = operation.command {
             hasher.update(b"COMMAND:");
             hasher.update(command.as_bytes());
         }
-        
+
         Ok(hasher.finalize().into())
     }
 
@@ -295,7 +302,7 @@ mod tests {
     fn test_blake3_hash_null() {
         let null_hash = Blake3Hash::null();
         assert!(null_hash.is_null());
-        
+
         let non_null = Blake3Hash::new([1u8; 32]);
         assert!(!non_null.is_null());
     }
@@ -317,7 +324,7 @@ mod tests {
             "key": "value",
             "number": 42
         });
-        
+
         let hash1 = HashUtils::hash_json(&data).unwrap();
         let hash2 = HashUtils::hash_json(&data).unwrap();
         assert_eq!(hash1, hash2);
@@ -343,7 +350,9 @@ mod tests {
     #[test]
     fn test_hash_validation() {
         assert!(HashUtils::is_valid_hash_string("a".repeat(64).as_str()));
-        assert!(HashUtils::is_valid_hash_string("0123456789abcdef".repeat(4).as_str()));
+        assert!(HashUtils::is_valid_hash_string(
+            "0123456789abcdef".repeat(4).as_str()
+        ));
         assert!(!HashUtils::is_valid_hash_string("x".repeat(64).as_str()));
         assert!(!HashUtils::is_valid_hash_string("a".repeat(63).as_str()));
         assert!(!HashUtils::is_valid_hash_string("a".repeat(65).as_str()));

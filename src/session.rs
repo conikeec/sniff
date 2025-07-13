@@ -6,7 +6,7 @@
 //! This module provides high-level interfaces for processing Claude Code
 //! session data, building Merkle trees, and storing results in the database.
 
-use crate::error::{SniffError, Result};
+use crate::error::{Result, SniffError};
 use crate::hash::Blake3Hash;
 use crate::jsonl::JsonlParser;
 use crate::operations::{Operation, OperationExtractor};
@@ -44,7 +44,7 @@ impl Default for SessionProcessorConfig {
 }
 
 /// Statistics about processed session data.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ProcessingStats {
     /// Number of sessions processed.
     pub sessions_processed: usize,
@@ -58,19 +58,6 @@ pub struct ProcessingStats {
     pub processing_time_ms: u64,
     /// Number of errors encountered.
     pub error_count: usize,
-}
-
-impl Default for ProcessingStats {
-    fn default() -> Self {
-        Self {
-            sessions_processed: 0,
-            total_messages: 0,
-            total_operations: 0,
-            tree_nodes_created: 0,
-            processing_time_ms: 0,
-            error_count: 0,
-        }
-    }
 }
 
 /// High-level processor for Claude Code sessions.
@@ -126,10 +113,10 @@ impl SessionProcessor {
 
         // Extract session ID from filename
         let session_id = self.extract_session_id(file_path)?;
-        
+
         // Parse JSONL file to get messages
         let messages = self.parse_session_file(file_path)?;
-        
+
         if messages.is_empty() {
             warn!("No messages found in session file: {}", file_path.display());
             return Err(SniffError::invalid_session(
@@ -179,9 +166,12 @@ impl SessionProcessor {
 
         // Discover session files
         let session_files = self.discover_session_files(project_path)?;
-        
+
         if session_files.is_empty() {
-            warn!("No session files found in project: {}", project_path.display());
+            warn!(
+                "No session files found in project: {}",
+                project_path.display()
+            );
             return Err(SniffError::project_discovery(
                 project_path,
                 "No session files found",
@@ -197,7 +187,11 @@ impl SessionProcessor {
                     session_root_hashes.push(root_hash);
                 }
                 Err(e) => {
-                    warn!("Failed to process session file {}: {}", session_file.display(), e);
+                    warn!(
+                        "Failed to process session file {}: {}",
+                        session_file.display(),
+                        e
+                    );
                     self.stats.error_count += 1;
                 }
             }
@@ -268,11 +262,15 @@ impl SessionProcessor {
     fn parse_session_file(&mut self, file_path: &Path) -> Result<Vec<ClaudeMessage>> {
         let parse_result = self.jsonl_parser.parse_file(file_path)?;
         let mut messages = parse_result.messages;
-        
+
         // Apply message limit if configured
         if let Some(max_messages) = self.config.max_messages {
             if messages.len() > max_messages {
-                debug!("Limiting messages from {} to {}", messages.len(), max_messages);
+                debug!(
+                    "Limiting messages from {} to {}",
+                    messages.len(),
+                    max_messages
+                );
                 messages.truncate(max_messages);
             }
         }
@@ -281,7 +279,10 @@ impl SessionProcessor {
     }
 
     /// Extracts operations from a list of messages.
-    fn extract_operations_from_messages(&mut self, messages: &[ClaudeMessage]) -> Result<Vec<Operation>> {
+    fn extract_operations_from_messages(
+        &mut self,
+        messages: &[ClaudeMessage],
+    ) -> Result<Vec<Operation>> {
         self.operation_extractor.extract_operations(messages)
     }
 
@@ -292,11 +293,9 @@ impl SessionProcessor {
         messages: &[ClaudeMessage],
         operations: &[Operation],
     ) -> Result<MerkleNode> {
-        let tree = self.tree_builder.build_session_tree(
-            session_id.clone(),
-            messages,
-            operations,
-        )?;
+        let tree =
+            self.tree_builder
+                .build_session_tree(session_id.clone(), messages, operations)?;
 
         self.stats.tree_nodes_created += 1 + tree.child_count();
         Ok(tree)
@@ -305,20 +304,20 @@ impl SessionProcessor {
     /// Stores a session tree and indexes it.
     fn store_session_tree(&mut self, tree: MerkleNode, session_id: &SessionId) -> Result<()> {
         let root_hash = tree.hash;
-        
+
         // Store the tree node
         self.storage.store_node(&tree)?;
-        
+
         // Store all cached nodes from the tree builder
         for (hash, node) in self.tree_builder.cached_nodes() {
             if *hash != root_hash {
                 self.storage.store_node(node)?;
             }
         }
-        
+
         // Index the session
         self.storage.index_session(session_id, &root_hash)?;
-        
+
         debug!("Stored session tree for session: {}", session_id);
         Ok(())
     }
@@ -328,16 +327,12 @@ impl SessionProcessor {
         use walkdir::WalkDir;
 
         let mut session_files = Vec::new();
-        
-        for entry in WalkDir::new(project_path)
-            .follow_links(false)
-            .max_depth(2) // Limit search depth
+
+        for entry in WalkDir::new(project_path).follow_links(false).max_depth(2)
+        // Limit search depth
         {
             let entry = entry.map_err(|e| {
-                SniffError::project_discovery(
-                    project_path,
-                    format!("Error walking directory: {e}"),
-                )
+                SniffError::project_discovery(project_path, format!("Error walking directory: {e}"))
             })?;
 
             if entry.file_type().is_file() {
@@ -355,13 +350,17 @@ impl SessionProcessor {
 
     /// Checks if a file path represents a session file.
     fn is_session_file(&self, path: &Path) -> bool {
-        path.extension().map_or(false, |ext| ext == "jsonl") &&
-        path.file_stem()
-            .and_then(|name| name.to_str())
-            .map_or(false, |name| {
-                // Session files typically have UUID-like names
-                name.len() > 10 && name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
-            })
+        path.extension().is_some_and(|ext| ext == "jsonl")
+            && path
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| {
+                    // Session files typically have UUID-like names
+                    name.len() > 10
+                        && name
+                            .chars()
+                            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+                })
     }
 
     /// Extracts the project name from a directory path.
@@ -381,7 +380,7 @@ impl SessionProcessor {
 
 /// Utilities for session processing.
 pub mod utils {
-    use super::*;
+    use super::{Path, Result, SniffError};
 
     /// Validates a session file format.
     ///
@@ -390,18 +389,20 @@ pub mod utils {
     /// Returns an error if the file is not a valid session file.
     pub fn validate_session_file(file_path: &Path) -> Result<()> {
         if !file_path.exists() {
-            return Err(SniffError::invalid_session(
-                format!("Session file does not exist: {}", file_path.display()),
-            ));
+            return Err(SniffError::invalid_session(format!(
+                "Session file does not exist: {}",
+                file_path.display()
+            )));
         }
 
         if !file_path.is_file() {
-            return Err(SniffError::invalid_session(
-                format!("Path is not a file: {}", file_path.display()),
-            ));
+            return Err(SniffError::invalid_session(format!(
+                "Path is not a file: {}",
+                file_path.display()
+            )));
         }
 
-        if file_path.extension().map_or(true, |ext| ext != "jsonl") {
+        if file_path.extension().is_none_or(|ext| ext != "jsonl") {
             return Err(SniffError::invalid_session(
                 "Session file must have .jsonl extension",
             ));
@@ -423,15 +424,12 @@ pub mod utils {
 
         for entry in WalkDir::new(project_path).follow_links(false) {
             let entry = entry.map_err(|e| {
-                SniffError::project_discovery(
-                    project_path,
-                    format!("Error walking directory: {e}"),
-                )
+                SniffError::project_discovery(project_path, format!("Error walking directory: {e}"))
             })?;
 
             if entry.file_type().is_file() {
                 let path = entry.path();
-                if path.extension().map_or(false, |ext| ext == "jsonl") {
+                if path.extension().is_some_and(|ext| ext == "jsonl") {
                     if let Ok(metadata) = std::fs::metadata(path) {
                         total_size += metadata.len();
                         file_count += 1;
@@ -455,16 +453,16 @@ mod tests {
     fn create_test_processor() -> (SessionProcessor, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.redb");
-        
+
         let storage_config = StorageConfig {
             db_path,
             ..Default::default()
         };
-        
+
         let storage = TreeStorage::open(storage_config).unwrap();
         let config = SessionProcessorConfig::default();
         let processor = SessionProcessor::new(storage, config).unwrap();
-        
+
         (processor, temp_dir)
     }
 
@@ -491,7 +489,7 @@ mod tests {
     #[test]
     fn test_is_session_file() {
         let (processor, _temp_dir) = create_test_processor();
-        
+
         assert!(processor.is_session_file(Path::new("session-123.jsonl")));
         assert!(!processor.is_session_file(Path::new("not-session.txt")));
         assert!(!processor.is_session_file(Path::new("too-short.jsonl")));
@@ -509,7 +507,7 @@ mod tests {
     fn test_validate_session_file() {
         let temp_dir = TempDir::new().unwrap();
         let valid_file = create_test_session_file(temp_dir.path(), "{}");
-        
+
         assert!(utils::validate_session_file(&valid_file).is_ok());
         assert!(utils::validate_session_file(Path::new("/nonexistent.jsonl")).is_err());
     }
@@ -517,10 +515,10 @@ mod tests {
     #[test]
     fn test_processing_stats() {
         let (mut processor, _temp_dir) = create_test_processor();
-        
+
         let initial_stats = processor.stats();
         assert_eq!(initial_stats.sessions_processed, 0);
-        
+
         processor.reset_stats();
         assert_eq!(processor.stats().sessions_processed, 0);
     }

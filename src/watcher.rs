@@ -7,7 +7,10 @@
 //! directories, detecting changes to session files and triggering
 //! appropriate processing workflows.
 
-use crate::error::{SniffError, Result};
+#![allow(clippy::match_same_arms)]
+#![allow(clippy::unused_async)]
+
+use crate::error::{Result, SniffError};
 use crate::types::SessionId;
 use notify::{
     event::{CreateKind, ModifyKind, RemoveKind},
@@ -379,7 +382,7 @@ impl ClaudeWatcher {
 
 /// Utility functions for working with Claude project directories.
 pub mod utils {
-    use super::*;
+    use super::{Path, PathBuf, Result, SniffError};
 
     /// Discovers all existing project directories.
     ///
@@ -422,8 +425,8 @@ pub mod utils {
 
         let mut sessions = Vec::new();
 
-        for entry in std::fs::read_dir(project_path)
-            .map_err(|e| SniffError::file_system(project_path, e))?
+        for entry in
+            std::fs::read_dir(project_path).map_err(|e| SniffError::file_system(project_path, e))?
         {
             let entry = entry.map_err(|e| SniffError::file_system(project_path, e))?;
             let path = entry.path();

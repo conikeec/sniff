@@ -3,8 +3,10 @@
 
 //! Sniff CLI - Advanced navigation and search for Claude Code session histories.
 
+#![allow(clippy::manual_flatten)]
+
 use clap::{Parser, Subcommand, ValueEnum};
-use sniff::{SniffError, Result, SimpleSessionAnalysis};
+use sniff::{Result, SimpleSessionAnalysis, SniffError};
 use std::path::PathBuf;
 use tracing::{error, info, warn, Level};
 use tracing_subscriber::fmt;
@@ -194,8 +196,18 @@ async fn main() -> Result<()> {
             force,
             max_messages,
             skip_operations,
-        } => handle_scan_command(projects_path, database_path, project, force, max_messages, skip_operations).await,
-        
+        } => {
+            handle_scan_command(
+                projects_path,
+                database_path,
+                project,
+                force,
+                max_messages,
+                skip_operations,
+            )
+            .await
+        }
+
         Commands::Search {
             query,
             limit,
@@ -203,13 +215,13 @@ async fn main() -> Result<()> {
             project,
             context,
         } => handle_search_command(database_path, query, limit, format, project, context).await,
-        
+
         Commands::Info {
             session,
             project,
             format,
         } => handle_info_command(database_path, session, project, format).await,
-        
+
         Commands::Stats {
             project,
             format,
@@ -222,9 +234,9 @@ async fn main() -> Result<()> {
             format,
             detailed,
         } => handle_analyze_command(projects_path, session, project, format, detailed).await,
-        
+
         Commands::Db { command } => handle_db_command(database_path, command).await,
-        
+
         // Legacy command for backward compatibility
         Commands::Parse {
             file,
@@ -243,13 +255,13 @@ async fn handle_scan_command(
     max_messages: Option<usize>,
     skip_operations: bool,
 ) -> Result<()> {
+    use sniff::progress::{show_success, ProgressIndicator};
     use sniff::session::{SessionProcessor, SessionProcessorConfig};
     use sniff::storage::{StorageConfig, TreeStorage};
-    use sniff::progress::{ProgressIndicator, show_success};
-    
+
     // Start progress indicator
     let progress = ProgressIndicator::new("scan");
-    
+
     info!("Scanning Claude projects in: {}", projects_path.display());
     info!("Database: {}", database_path.display());
 
@@ -271,13 +283,17 @@ async fn handle_scan_command(
 
     // Discover projects to scan
     let mut projects_to_scan = Vec::new();
-    
+
     if let Some(project_name) = project_filter {
         let project_path = projects_path.join(&project_name);
         if project_path.exists() {
             projects_to_scan.push((project_name, project_path));
         } else {
-            progress.finish_with_error(&format!("Project '{}' not found in {}", project_name, projects_path.display()));
+            progress.finish_with_error(&format!(
+                "Project '{}' not found in {}",
+                project_name,
+                projects_path.display()
+            ));
             return Ok(());
         }
     } else {
@@ -285,7 +301,7 @@ async fn handle_scan_command(
         progress.update("Discovering Claude projects...");
         use sniff::watcher::utils;
         let discovered_projects = utils::discover_projects(&projects_path)?;
-        
+
         for project_path in discovered_projects {
             let project_name = utils::extract_project_name(&project_path);
             projects_to_scan.push((project_name, project_path));
@@ -303,9 +319,14 @@ async fn handle_scan_command(
     let total_projects = projects_to_scan.len();
 
     for (i, (project_name, project_path)) in projects_to_scan.iter().enumerate() {
-        progress.update(&format!("Processing project {} of {}: {}", i + 1, total_projects, project_name));
+        progress.update(&format!(
+            "Processing project {} of {}: {}",
+            i + 1,
+            total_projects,
+            project_name
+        ));
         info!("Processing project: {}", project_name);
-        
+
         match processor.process_project_directory(project_path) {
             Ok(_project_hash) => {
                 let stats = processor.stats();
@@ -324,7 +345,7 @@ async fn handle_scan_command(
                 total_errors += 1;
             }
         }
-        
+
         // Reset stats for next project
         processor.reset_stats();
     }
@@ -340,13 +361,12 @@ async fn handle_scan_command(
             "🎉 Successfully indexed {} sessions across {} projects!",
             total_processed, total_projects
         )));
-        
+
         // Show summary stats
         let final_stats = processor.stats();
         show_success(&format!(
             "📊 Summary: {} messages processed, {} operations extracted",
-            final_stats.total_messages,
-            final_stats.total_operations
+            final_stats.total_messages, final_stats.total_operations
         ));
     }
 
@@ -363,7 +383,7 @@ async fn handle_search_command(
     context: bool,
 ) -> Result<()> {
     use sniff::storage::{StorageConfig, TreeStorage};
-    
+
     // Initialize storage
     let storage_config = StorageConfig {
         db_path: database_path,
@@ -378,33 +398,40 @@ async fn handle_search_command(
         if context {
             // Use enhanced search with conversation context
             use sniff::search::{EnhancedSearchEngine, SearchConfig};
-            
+
             println!("🔍 Context-aware search for: '{}'", query_str);
             println!();
-            
+
             let config = SearchConfig::default();
             let mut engine = EnhancedSearchEngine::new(storage, config);
             let threads = engine.search(&query_str)?;
-            
+
             if threads.is_empty() {
                 println!("❌ No conversation threads found for '{}'", query_str);
                 return Ok(());
             }
-            
+
             println!("🎯 Found {} debugging session(s):", threads.len());
             println!();
-            
+
             for (i, thread) in threads.iter().enumerate() {
-                println!("{}. 📄 Session: {} ({})", i + 1, thread.session_id, 
-                    thread.root_message.message.timestamp()
+                println!(
+                    "{}. 📄 Session: {} ({})",
+                    i + 1,
+                    thread.session_id,
+                    thread
+                        .root_message
+                        .message
+                        .timestamp()
                         .map(|ts| ts.format("%Y-%m-%d %H:%M").to_string())
-                        .unwrap_or_else(|| "Unknown time".to_string()));
-                
+                        .unwrap_or_else(|| "Unknown time".to_string())
+                );
+
                 // Extract and show files that were modified
                 let mut files_modified = Vec::new();
                 let mut commands_run = Vec::new();
                 let mut thinking_insights = Vec::new();
-                
+
                 for message_ctx in &thread.messages {
                     if let Some(search_match) = &message_ctx.search_match {
                         if search_match.snippet.starts_with("📁") {
@@ -416,7 +443,7 @@ async fn handle_search_command(
                         }
                     }
                 }
-                
+
                 // Show files modified
                 if !files_modified.is_empty() {
                     println!("   📁 Files modified:");
@@ -424,21 +451,29 @@ async fn handle_search_command(
                         println!("      • {}", file);
                     }
                 }
-                
+
                 // Show tools and their purpose
                 if !thread.tools_used.is_empty() {
                     println!("   🔧 Tools used:");
                     for tool in &thread.tools_used {
                         if let Some(file_path) = tool.input.get("file_path") {
-                            println!("      • {} → {}", tool.name, file_path.as_str().unwrap_or("unknown"));
+                            println!(
+                                "      • {} → {}",
+                                tool.name,
+                                file_path.as_str().unwrap_or("unknown")
+                            );
                         } else if let Some(command) = tool.input.get("command") {
-                            println!("      • {} → {}", tool.name, command.as_str().unwrap_or("unknown"));
+                            println!(
+                                "      • {} → {}",
+                                tool.name,
+                                command.as_str().unwrap_or("unknown")
+                            );
                         } else {
                             println!("      • {}", tool.name);
                         }
                     }
                 }
-                
+
                 // Show reasoning/thinking that led to changes
                 if !thinking_insights.is_empty() {
                     println!("   💭 Key reasoning:");
@@ -446,10 +481,10 @@ async fn handle_search_command(
                         println!("      • {}", insight);
                     }
                 }
-                
+
                 println!();
             }
-            
+
             return Ok(());
         }
 
@@ -461,11 +496,15 @@ async fn handle_search_command(
                 if search_results.is_empty() {
                     println!("No content found matching '{}'", query_str);
                 } else {
-                    println!("Found {} session(s) with matching content:", search_results.len());
+                    println!(
+                        "Found {} session(s) with matching content:",
+                        search_results.len()
+                    );
                     for (session_id, snippets) in search_results {
                         println!("\n📄 Session: {}", session_id);
                         for (i, snippet) in snippets.iter().enumerate() {
-                            if i < 3 { // Show max 3 snippets per session
+                            if i < 3 {
+                                // Show max 3 snippets per session
                                 println!("   💬 {}", snippet.trim());
                             }
                         }
@@ -517,7 +556,7 @@ async fn handle_info_command(
     format: OutputFormat,
 ) -> Result<()> {
     use sniff::storage::{StorageConfig, TreeStorage};
-    
+
     // Initialize storage
     let storage_config = StorageConfig {
         db_path: database_path,
@@ -536,7 +575,10 @@ async fn handle_info_command(
                         println!("  Root Hash: {}", root_hash);
                         println!("  Messages: {}", session_node.metadata.message_count);
                         println!("  Operations: {}", session_node.metadata.operation_count);
-                        println!("  Content Size: {} bytes", session_node.metadata.content_size);
+                        println!(
+                            "  Content Size: {} bytes",
+                            session_node.metadata.content_size
+                        );
                         println!("  Created: {}", session_node.metadata.created_at);
                         println!("  Updated: {}", session_node.metadata.updated_at);
                     }
@@ -553,8 +595,9 @@ async fn handle_info_command(
                         println!("{}", serde_json::to_string_pretty(&json_output)?);
                     }
                     OutputFormat::Compact => {
-                        println!("{}: {} msgs, {} ops, {} bytes", 
-                            session, 
+                        println!(
+                            "{}: {} msgs, {} ops, {} bytes",
+                            session,
                             session_node.metadata.message_count,
                             session_node.metadata.operation_count,
                             session_node.metadata.content_size
@@ -570,13 +613,14 @@ async fn handle_info_command(
     } else if let Some(project) = project_name {
         // Display project-specific information
         println!("📁 Project Information for: {}", project);
-        
+
         // Get all sessions for this project
         let sessions = storage.list_sessions()?;
-        let project_sessions: Vec<_> = sessions.into_iter()
+        let project_sessions: Vec<_> = sessions
+            .into_iter()
             .filter(|s| s.contains(&project))
             .collect();
-            
+
         if project_sessions.is_empty() {
             println!("   No sessions found for project '{}'", project);
         } else {
@@ -602,8 +646,10 @@ async fn handle_info_command(
                 println!("{}", serde_json::to_string_pretty(&json_output)?);
             }
             OutputFormat::Compact => {
-                println!("{} nodes, {} sessions, {} projects", 
-                    stats.total_nodes, stats.total_sessions, stats.total_projects);
+                println!(
+                    "{} nodes, {} sessions, {} projects",
+                    stats.total_nodes, stats.total_sessions, stats.total_projects
+                );
             }
         }
     }
@@ -619,7 +665,7 @@ async fn handle_stats_command(
     detailed: bool,
 ) -> Result<()> {
     use sniff::storage::{StorageConfig, TreeStorage};
-    
+
     // Initialize storage
     let storage_config = StorageConfig {
         db_path: database_path,
@@ -639,9 +685,12 @@ async fn handle_stats_command(
             println!("  Total Nodes: {}", db_stats.total_nodes);
             println!("  Total Sessions: {}", db_stats.total_sessions);
             println!("  Total Projects: {}", db_stats.total_projects);
-            println!("  File Size: {:.2} MB", db_stats.file_size_bytes as f64 / 1_048_576.0);
+            println!(
+                "  File Size: {:.2} MB",
+                db_stats.file_size_bytes as f64 / 1_048_576.0
+            );
             println!("  Schema Version: {}", db_stats.schema_version);
-            
+
             if detailed {
                 println!();
                 println!("Cache Performance:");
@@ -654,13 +703,14 @@ async fn handle_stats_command(
             if let Some(project) = project_filter {
                 println!();
                 println!("Project Filter: {}", project);
-                
+
                 // Get project-specific statistics
                 let sessions = storage.list_sessions()?;
-                let project_sessions: Vec<_> = sessions.into_iter()
+                let project_sessions: Vec<_> = sessions
+                    .into_iter()
                     .filter(|s| s.contains(&project))
                     .collect();
-                    
+
                 println!("  Project Sessions: {}", project_sessions.len());
                 if !project_sessions.is_empty() {
                     println!("  Sessions:");
@@ -697,9 +747,10 @@ async fn handle_stats_command(
             println!("{}", serde_json::to_string_pretty(&json_output)?);
         }
         OutputFormat::Compact => {
-            println!("{} nodes, {} sessions, {} projects, {:.1}MB", 
-                db_stats.total_nodes, 
-                db_stats.total_sessions, 
+            println!(
+                "{} nodes, {} sessions, {} projects, {:.1}MB",
+                db_stats.total_nodes,
+                db_stats.total_sessions,
                 db_stats.total_projects,
                 db_stats.file_size_bytes as f64 / 1_048_576.0
             );
@@ -712,31 +763,31 @@ async fn handle_stats_command(
 /// Handles database maintenance commands.
 async fn handle_db_command(database_path: PathBuf, command: DbCommands) -> Result<()> {
     use sniff::storage::{StorageConfig, TreeStorage};
-    
+
     match command {
         DbCommands::Compact => {
             info!("Compacting database: {}", database_path.display());
-            
+
             let storage_config = StorageConfig {
                 db_path: database_path,
                 ..Default::default()
             };
             let mut storage = TreeStorage::open(storage_config)?;
-            
+
             storage.compact()?;
             println!("✓ Database compaction completed");
         }
-        
+
         DbCommands::Status => {
             let storage_config = StorageConfig {
                 db_path: database_path.clone(),
                 ..Default::default()
             };
             let storage = TreeStorage::open(storage_config)?;
-            
+
             let stats = storage.get_stats()?;
             let cache_stats = storage.cache_stats();
-            
+
             println!("Database Status");
             println!("===============");
             println!("Path: {}", database_path.display());
@@ -750,15 +801,15 @@ async fn handle_db_command(database_path: PathBuf, command: DbCommands) -> Resul
             println!("Projects: {}", stats.total_projects);
             println!("Cache Hit Ratio: {:.2}%", cache_stats.hit_ratio() * 100.0);
         }
-        
+
         DbCommands::Clear { confirm } => {
             if !confirm {
                 error!("Database clear requires --confirm flag for safety");
                 return Ok(());
             }
-            
+
             info!("Clearing database: {}", database_path.display());
-            
+
             if database_path.exists() {
                 std::fs::remove_file(&database_path).map_err(|e| {
                     SniffError::storage_error(format!("Failed to remove database: {e}"))
@@ -768,33 +819,38 @@ async fn handle_db_command(database_path: PathBuf, command: DbCommands) -> Resul
                 println!("Database does not exist");
             }
         }
-        
+
         DbCommands::Export { output, project } => {
             info!("Exporting database to: {}", output.display());
-            
+
             let storage_config = StorageConfig {
                 db_path: database_path,
                 ..Default::default()
             };
             let storage = TreeStorage::open(storage_config)?;
-            
+
             let sessions = storage.list_sessions()?;
             let filtered_sessions: Vec<_> = if let Some(project_filter) = project {
-                sessions.into_iter()
+                sessions
+                    .into_iter()
                     .filter(|s| s.contains(&project_filter))
                     .collect()
             } else {
                 sessions
             };
-            
+
             let export_data = serde_json::json!({
                 "export_timestamp": chrono::Utc::now(),
                 "total_sessions": filtered_sessions.len(),
                 "sessions": filtered_sessions
             });
-            
+
             std::fs::write(&output, serde_json::to_string_pretty(&export_data)?)?;
-            println!("✓ Exported {} sessions to {}", filtered_sessions.len(), output.display());
+            println!(
+                "✓ Exported {} sessions to {}",
+                filtered_sessions.len(),
+                output.display()
+            );
         }
     }
 
@@ -898,8 +954,11 @@ async fn handle_analyze_command(
 
     if let Some(session_path) = session_file {
         // Analyze a specific session file
-        info!("Analyzing specific session file: {}", session_path.display());
-        
+        info!(
+            "Analyzing specific session file: {}",
+            session_path.display()
+        );
+
         match analyzer.analyze_session(&session_path) {
             Ok(analysis) => {
                 all_analyses.push(analysis);
@@ -917,7 +976,11 @@ async fn handle_analyze_command(
             // Analyze specific project
             let project_path = projects_path.join(&project_name);
             if !project_path.exists() {
-                error!("Project '{}' not found in {}", project_name, projects_path.display());
+                error!(
+                    "Project '{}' not found in {}",
+                    project_name,
+                    projects_path.display()
+                );
                 return Ok(());
             }
 
@@ -937,10 +1000,11 @@ async fn handle_analyze_command(
                     if let Ok(entry) = entry {
                         let project_path = entry.path();
                         if project_path.is_dir() {
-                            let project_name = project_path.file_name()
+                            let project_name = project_path
+                                .file_name()
                                 .unwrap_or_default()
                                 .to_string_lossy();
-                            
+
                             info!("Analyzing project: {}", project_name);
                             match analyzer.analyze_project_directory(&project_path) {
                                 Ok(analyses) => {
@@ -954,7 +1018,10 @@ async fn handle_analyze_command(
                     }
                 }
             } else {
-                error!("Failed to read projects directory: {}", projects_path.display());
+                error!(
+                    "Failed to read projects directory: {}",
+                    projects_path.display()
+                );
                 return Ok(());
             }
         }
@@ -1000,11 +1067,24 @@ fn display_table_format(analyses: &[SimpleSessionAnalysis], detailed: bool) {
 
     // Summary statistics
     let total_sessions = analyses.len();
-    let total_files = analyses.iter().map(|a| a.modified_files.len()).sum::<usize>();
-    let total_patterns = analyses.iter().map(|a| a.metrics.total_bullshit_patterns).sum::<usize>();
-    let critical_patterns = analyses.iter().map(|a| a.metrics.critical_patterns).sum::<usize>();
+    let total_files = analyses
+        .iter()
+        .map(|a| a.modified_files.len())
+        .sum::<usize>();
+    let total_patterns = analyses
+        .iter()
+        .map(|a| a.metrics.total_bullshit_patterns)
+        .sum::<usize>();
+    let critical_patterns = analyses
+        .iter()
+        .map(|a| a.metrics.critical_patterns)
+        .sum::<usize>();
     let avg_quality = if total_sessions > 0 {
-        analyses.iter().map(|a| a.metrics.quality_score).sum::<f64>() / total_sessions as f64
+        analyses
+            .iter()
+            .map(|a| a.metrics.quality_score)
+            .sum::<f64>()
+            / total_sessions as f64
     } else {
         0.0
     };
@@ -1021,7 +1101,8 @@ fn display_table_format(analyses: &[SimpleSessionAnalysis], detailed: bool) {
         println!("🚨 Sessions with Critical Issues:");
         for analysis in analyses {
             if analysis.metrics.critical_patterns > 0 {
-                println!("   {} - {} critical patterns, {:.1}% quality", 
+                println!(
+                    "   {} - {} critical patterns, {:.1}% quality",
                     analysis.session_id,
                     analysis.metrics.critical_patterns,
                     analysis.metrics.quality_score
@@ -1037,13 +1118,17 @@ fn display_table_format(analyses: &[SimpleSessionAnalysis], detailed: bool) {
             println!("   Session: {}", analysis.session_id);
             println!("      Files: {}", analysis.modified_files.len());
             println!("      Operations: {}", analysis.file_operations.len());
-            println!("      Patterns: {}", analysis.metrics.total_bullshit_patterns);
+            println!(
+                "      Patterns: {}",
+                analysis.metrics.total_bullshit_patterns
+            );
             println!("      Quality: {:.1}%", analysis.metrics.quality_score);
-            
+
             if !analysis.bullshit_detections.is_empty() {
                 println!("      Issues:");
                 for detection in &analysis.bullshit_detections {
-                    println!("         {} {} ({}:{}): {}", 
+                    println!(
+                        "         {} {} ({}:{}): {}",
                         detection.severity.emoji(),
                         detection.rule_name,
                         detection.file_path,
@@ -1052,7 +1137,7 @@ fn display_table_format(analyses: &[SimpleSessionAnalysis], detailed: bool) {
                     );
                 }
             }
-            
+
             if !analysis.recommendations.is_empty() {
                 println!("      Recommendations:");
                 for rec in &analysis.recommendations {
@@ -1067,13 +1152,21 @@ fn display_table_format(analyses: &[SimpleSessionAnalysis], detailed: bool) {
     if total_patterns > 0 {
         println!("💡 Overall Recommendations:");
         if critical_patterns > 0 {
-            println!("   🚨 Address {} critical patterns immediately", critical_patterns);
+            println!(
+                "   🚨 Address {} critical patterns immediately",
+                critical_patterns
+            );
         }
         if avg_quality < 80.0 {
-            println!("   📝 Code quality needs improvement (current: {:.1}%)", avg_quality);
+            println!(
+                "   📝 Code quality needs improvement (current: {:.1}%)",
+                avg_quality
+            );
         }
         if total_patterns > total_sessions * 5 {
-            println!("   🔍 High pattern density detected - consider reviewing development practices");
+            println!(
+                "   🔍 High pattern density detected - consider reviewing development practices"
+            );
         }
     } else {
         println!("✅ No bullshit patterns detected! Excellent work!");
@@ -1082,7 +1175,8 @@ fn display_table_format(analyses: &[SimpleSessionAnalysis], detailed: bool) {
 
 fn display_compact_format(analyses: &[SimpleSessionAnalysis]) {
     for analysis in analyses {
-        println!("{}: {} files, {} patterns, {:.1}% quality", 
+        println!(
+            "{}: {} files, {} patterns, {:.1}% quality",
             analysis.session_id,
             analysis.modified_files.len(),
             analysis.metrics.total_bullshit_patterns,
@@ -1090,4 +1184,3 @@ fn display_compact_format(analyses: &[SimpleSessionAnalysis]) {
         );
     }
 }
-

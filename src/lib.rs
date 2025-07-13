@@ -10,6 +10,20 @@
 #![warn(clippy::all)]
 #![warn(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
+#![allow(clippy::needless_pass_by_value)]
+#![allow(clippy::unused_self)]
+#![allow(clippy::unnecessary_wraps)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::explicit_counter_loop)]
+#![allow(clippy::ref_option)]
+#![allow(clippy::match_same_arms)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::manual_let_else)]
+#![allow(clippy::struct_excessive_bools)]
+#![allow(clippy::manual_flatten)]
 
 pub mod analysis;
 pub mod display;
@@ -29,10 +43,10 @@ pub mod watcher;
 
 // Re-export commonly used types
 pub use analysis::{
-    BullshitAnalyzer, BullshitDetection, SupportedLanguage,
-    EnhancedBullshitAnalysis, PerformanceImpact, QualityAssessment, SemanticContextResult, ContextLines,
+    BullshitAnalyzer, BullshitDetection, ContextLines, EnhancedBullshitAnalysis, PerformanceImpact,
+    QualityAssessment, SemanticContextResult, SupportedLanguage,
 };
 pub use display::BullshitDisplayFormatter;
-pub use error::{SniffError, Result};
-pub use simple_session_analyzer::{SimpleSessionAnalyzer, SimpleSessionAnalysis};
+pub use error::{Result, SniffError};
+pub use simple_session_analyzer::{SimpleSessionAnalysis, SimpleSessionAnalyzer};
 pub use types::{ClaudeMessage, MessageUuid, SessionId, ToolUseId, ToolUseOperation};

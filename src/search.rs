@@ -6,7 +6,7 @@
 //! This module provides an interactive search experience that shows conversation
 //! context, tool usage, and relationships between messages in a visual tree format.
 
-use crate::error::{SniffError, Result};
+use crate::error::{Result, SniffError};
 use crate::storage::TreeStorage;
 use crate::types::{ClaudeMessage, MessageUuid, SessionId};
 use chrono::{DateTime, Utc};
@@ -51,7 +51,7 @@ pub struct SearchMatch {
     pub snippet: String,
     /// Relevance score (0.0 to 1.0).
     pub relevance: f64,
-    /// Type of content that matched (thinking, text, tool_input, etc.).
+    /// Type of content that matched (thinking, text, `tool_input`, etc.).
     pub match_type: MatchType,
 }
 
@@ -127,6 +127,7 @@ pub struct EnhancedSearchEngine {
 
 impl EnhancedSearchEngine {
     /// Creates a new enhanced search engine.
+    #[must_use]
     pub fn new(storage: TreeStorage, config: SearchConfig) -> Self {
         Self { storage, config }
     }
@@ -138,61 +139,82 @@ impl EnhancedSearchEngine {
         }
 
         // Step 1: Find all sessions with matching content using existing search
-        let basic_results = self.storage.search_content(query, self.config.max_results * 2)?;
-        
+        let basic_results = self
+            .storage
+            .search_content(query, self.config.max_results * 2)?;
+
         let mut threads = Vec::new();
-        
+
         // Step 2: Build conversation threads for each matching session
         for (session_id, _snippets) in basic_results {
-            match self.build_basic_thread(&session_id, query) {
-                Ok(thread) => threads.push(thread),
-                Err(_) => {
-                    // Session found in basic search but no actual message matches - skip silently
-                    // This ensures we only return threads with real matching content
-                }
+            if let Ok(thread) = self.build_basic_thread(&session_id, query) {
+                threads.push(thread)
+            } else {
+                // Session found in basic search but no actual message matches - skip silently
+                // This ensures we only return threads with real matching content
             }
         }
-        
+
         // Step 3: Sort by relevance and limit results
         threads.sort_by(|a, b| {
             let a_score = self.calculate_thread_relevance(a, query);
             let b_score = self.calculate_thread_relevance(b, query);
-            b_score.partial_cmp(&a_score).unwrap_or(std::cmp::Ordering::Equal)
+            b_score
+                .partial_cmp(&a_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
-        
+
         threads.truncate(self.config.max_results);
-        
+
         Ok(threads)
     }
 
     /// Builds a real conversation thread for a session using actual stored data.
-    fn build_basic_thread(&mut self, session_id: &SessionId, query: &str) -> Result<ConversationThread> {
+    fn build_basic_thread(
+        &mut self,
+        session_id: &SessionId,
+        query: &str,
+    ) -> Result<ConversationThread> {
         // Get the session root hash
         let session_root_hash = match self.storage.get_session_root(session_id)? {
             Some(hash) => hash,
-            None => return Err(SniffError::storage_error(format!("Session {} not found", session_id))),
+            None => {
+                return Err(SniffError::storage_error(format!(
+                    "Session {session_id} not found"
+                )))
+            }
         };
-        
-        // Get the session node 
+
+        // Get the session node
         let session_node = match self.storage.get_node(&session_root_hash)? {
             Some(node) => node,
-            None => return Err(SniffError::storage_error(format!("Session node not found for {}", session_id))),
+            None => {
+                return Err(SniffError::storage_error(format!(
+                    "Session node not found for {session_id}"
+                )))
+            }
         };
-        
+
         let mut all_messages = Vec::new();
         let mut tools_used = Vec::new();
         let mut matching_messages = Vec::new();
-        
+
         // First pass: collect all messages in chronological order
-        for (_child_key, child_hash) in &session_node.children {
+        for child_hash in session_node.children.values() {
             if let Ok(Some(child_node)) = self.storage.get_node(child_hash) {
                 match &child_node.node_type {
-                    crate::tree::NodeType::Message { message_uuid, timestamp, role: _ } => {
+                    crate::tree::NodeType::Message {
+                        message_uuid,
+                        timestamp,
+                        role: _,
+                    } => {
                         if let Some(ref content_data) = child_node.content {
-                            if let Ok(message) = serde_json::from_slice::<crate::types::ClaudeMessage>(content_data) {
+                            if let Ok(message) =
+                                serde_json::from_slice::<crate::types::ClaudeMessage>(content_data)
+                            {
                                 // Extract tool usage from this message before moving
                                 let tool_uses = message.extract_tool_uses();
-                                
+
                                 all_messages.push((message_uuid.clone(), message, *timestamp));
                                 for tool_use in tool_uses {
                                     tools_used.push(ToolContext {
@@ -201,25 +223,43 @@ impl EnhancedSearchEngine {
                                         input: tool_use.input.clone(),
                                         output: self.find_tool_result(&tool_use.id, &session_node),
                                         request_message: message_uuid.clone(),
-                                        result_message: self.find_tool_result_message(&tool_use.id, &session_node),
+                                        result_message: self
+                                            .find_tool_result_message(&tool_use.id, &session_node),
                                         timestamp: *timestamp,
                                     });
                                 }
                             }
                         }
                     }
-                    crate::tree::NodeType::Operation { tool_use_id, tool_name, timestamp } => {
+                    crate::tree::NodeType::Operation {
+                        tool_use_id,
+                        tool_name,
+                        timestamp,
+                    } => {
                         // Extract operation-level tool information
                         if let Some(ref content_data) = child_node.content {
-                            if let Ok(operation_data) = serde_json::from_slice::<serde_json::Value>(content_data) {
+                            if let Ok(operation_data) =
+                                serde_json::from_slice::<serde_json::Value>(content_data)
+                            {
                                 if tool_name.to_lowercase().contains(&query.to_lowercase()) {
                                     tools_used.push(ToolContext {
                                         name: tool_name.clone(),
                                         id: tool_use_id.clone(),
-                                        input: operation_data.get("input").cloned().unwrap_or_default().as_object().map(|obj| {
-                                            obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
-                                        }).unwrap_or_default(),
-                                        output: operation_data.get("output").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                        input: operation_data
+                                            .get("input")
+                                            .cloned()
+                                            .unwrap_or_default()
+                                            .as_object()
+                                            .map(|obj| {
+                                                obj.iter()
+                                                    .map(|(k, v)| (k.clone(), v.clone()))
+                                                    .collect()
+                                            })
+                                            .unwrap_or_default(),
+                                        output: operation_data
+                                            .get("output")
+                                            .and_then(|v| v.as_str())
+                                            .map(std::string::ToString::to_string),
                                         request_message: "operation".to_string(),
                                         result_message: None,
                                         timestamp: *timestamp,
@@ -232,19 +272,19 @@ impl EnhancedSearchEngine {
                 }
             }
         }
-        
+
         // Sort all messages chronologically
         all_messages.sort_by(|a, b| a.2.cmp(&b.2));
-        
+
         // Second pass: find matching messages and build context
         let query_lower = query.to_lowercase();
         for (i, (message_uuid, message, _timestamp)) in all_messages.iter().enumerate() {
             let text_content = message.extract_all_text_content();
             let thinking_content = message.extract_thinking_content();
-            
+
             // Check for matches in all content types
             let mut search_matches = Vec::new();
-            
+
             // Check regular text content
             for text in &text_content {
                 if text.to_lowercase().contains(&query_lower) {
@@ -257,7 +297,7 @@ impl EnhancedSearchEngine {
                     });
                 }
             }
-            
+
             // Check thinking content
             if self.config.include_thinking {
                 for thinking in &thinking_content {
@@ -272,34 +312,42 @@ impl EnhancedSearchEngine {
                     }
                 }
             }
-            
+
             // If we found matches, create message context with surrounding conversation
             if !search_matches.is_empty() {
-                let best_match = search_matches.into_iter().max_by(|a, b| 
-                    a.relevance.partial_cmp(&b.relevance).unwrap_or(std::cmp::Ordering::Equal)
-                ).unwrap();
-                
+                let best_match = search_matches
+                    .into_iter()
+                    .max_by(|a, b| {
+                        a.relevance
+                            .partial_cmp(&b.relevance)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .unwrap();
+
                 // Extract preceding and following context
                 let context_start = i.saturating_sub(self.config.context_window);
                 let context_end = (i + self.config.context_window + 1).min(all_messages.len());
-                
+
                 let preceding_context: Vec<MessageUuid> = all_messages[context_start..i]
                     .iter()
                     .map(|(uuid, _, _)| uuid.clone())
                     .collect();
-                    
+
                 let following_context: Vec<MessageUuid> = all_messages[i + 1..context_end]
                     .iter()
                     .map(|(uuid, _, _)| uuid.clone())
                     .collect();
-                
+
                 // Find parent/child relationships
                 let parent = message.base().and_then(|base| base.parent_uuid.clone());
-                let children = all_messages.iter()
-                    .filter(|(_, msg, _)| msg.base().and_then(|base| base.parent_uuid.as_ref()) == Some(message_uuid))
+                let children = all_messages
+                    .iter()
+                    .filter(|(_, msg, _)| {
+                        msg.base().and_then(|base| base.parent_uuid.as_ref()) == Some(message_uuid)
+                    })
                     .map(|(uuid, _, _)| uuid.clone())
                     .collect();
-                
+
                 let message_ctx = MessageContext {
                     message: message.clone(),
                     parent,
@@ -308,22 +356,20 @@ impl EnhancedSearchEngine {
                     following_context,
                     search_match: Some(best_match),
                 };
-                
+
                 matching_messages.push(message_ctx);
             }
         }
-        
+
         // Only proceed if we have matching messages - no fake fallbacks
         if matching_messages.is_empty() {
             return Err(SniffError::storage_error(format!(
-                "No messages found matching '{}' in session {}", 
-                query, 
-                session_id
+                "No messages found matching '{query}' in session {session_id}"
             )));
         }
-        
+
         let root_message = matching_messages[0].clone();
-        
+
         Ok(ConversationThread {
             root_message,
             messages: matching_messages,
@@ -336,33 +382,46 @@ impl EnhancedSearchEngine {
     fn extract_debugging_context(&self, text: &str, query: &str) -> String {
         let query_lower = query.to_lowercase();
         let text_lower = text.to_lowercase();
-        
+
         // Check if this is a file path
-        if text.contains('/') && (text.contains(".rs") || text.contains(".ts") || text.contains(".py") || text.contains(".js") || text.contains(".md")) {
+        if text.contains('/')
+            && (text.contains(".rs")
+                || text.contains(".ts")
+                || text.contains(".py")
+                || text.contains(".js")
+                || text.contains(".md"))
+        {
             return format!("📁 {}", text.trim());
         }
-        
+
         // Check if this is tool output with file information
         if text.contains("Tool result:") || text.contains("→") {
             let lines: Vec<&str> = text.lines().take(3).collect();
             return format!("🔧 {}", lines.join(" | "));
         }
-        
+
         // Check if this looks like a command
-        if text.trim_start().starts_with("$") || text.contains("command:") {
+        if text.trim_start().starts_with('$') || text.contains("command:") {
             return format!("💻 {}", text.trim());
         }
-        
+
         // For thinking content, show more context
         if text.len() > 200 {
             if let Some(match_pos) = text_lower.find(&query_lower) {
                 let start = match_pos.saturating_sub(100).max(0);
                 let end = (match_pos + query.len() + 100).min(text.len());
-                
+
                 // Ensure we don't cut UTF-8 characters
-                let safe_start = text.char_indices().find(|(i, _)| *i >= start).map_or(0, |(i, _)| i);
-                let safe_end = text.char_indices().rev().find(|(i, _)| *i <= end).map_or(text.len(), |(i, _)| i);
-                
+                let safe_start = text
+                    .char_indices()
+                    .find(|(i, _)| *i >= start)
+                    .map_or(0, |(i, _)| i);
+                let safe_end = text
+                    .char_indices()
+                    .rev()
+                    .find(|(i, _)| *i <= end)
+                    .map_or(text.len(), |(i, _)| i);
+
                 let snippet = &text[safe_start..safe_end].trim();
                 format!("💭 ...{}...", snippet.replace('\n', " "))
             } else {
@@ -372,36 +431,38 @@ impl EnhancedSearchEngine {
             text.trim().to_string()
         }
     }
-    
+
     /// Calculates relevance score based on match quality and context.
     fn calculate_text_relevance(&self, text: &str, query: &str) -> f64 {
         let query_lower = query.to_lowercase();
         let text_lower = text.to_lowercase();
-        
+
         let mut score: f64 = 0.0;
-        
+
         // Exact match bonus
         if text_lower.contains(&query_lower) {
             score += 0.5;
         }
-        
+
         // Word boundary match bonus
         for word in query_lower.split_whitespace() {
             if text_lower.split_whitespace().any(|w| w == word) {
                 score += 0.3;
             }
         }
-        
+
         // File path bonus (if it looks like a path)
-        if text.contains('/') && (text.contains(".rs") || text.contains(".md") || text.contains(".toml")) {
+        if text.contains('/')
+            && (text.contains(".rs") || text.contains(".md") || text.contains(".toml"))
+        {
             score += 0.2;
         }
-        
+
         // Command/tool usage bonus
         if text.contains("tool") || text.contains("command") || text.contains("run") {
             score += 0.1;
         }
-        
+
         // Length penalty for very short or very long texts
         let text_len = text.len();
         if text_len < 20 {
@@ -409,21 +470,31 @@ impl EnhancedSearchEngine {
         } else if text_len > 1000 {
             score *= 0.8; // Slight penalty for very long matches
         }
-        
+
         score.min(1.0)
     }
-    
-    /// Determines the type of match based on content characteristics.
-    
+
     /// Finds the output/result for a specific tool use ID.
-    fn find_tool_result(&mut self, tool_use_id: &str, session_node: &crate::tree::MerkleNode) -> Option<String> {
-        for (_child_key, child_hash) in &session_node.children {
+    fn find_tool_result(
+        &mut self,
+        tool_use_id: &str,
+        session_node: &crate::tree::MerkleNode,
+    ) -> Option<String> {
+        for child_hash in session_node.children.values() {
             if let Ok(Some(child_node)) = self.storage.get_node(child_hash) {
-                if let crate::tree::NodeType::Operation { tool_use_id: op_id, .. } = &child_node.node_type {
+                if let crate::tree::NodeType::Operation {
+                    tool_use_id: op_id, ..
+                } = &child_node.node_type
+                {
                     if op_id == tool_use_id {
                         if let Some(ref content_data) = child_node.content {
-                            if let Ok(operation_data) = serde_json::from_slice::<serde_json::Value>(content_data) {
-                                return operation_data.get("output").and_then(|v| v.as_str()).map(|s| s.to_string());
+                            if let Ok(operation_data) =
+                                serde_json::from_slice::<serde_json::Value>(content_data)
+                            {
+                                return operation_data
+                                    .get("output")
+                                    .and_then(|v| v.as_str())
+                                    .map(std::string::ToString::to_string);
                             }
                         }
                     }
@@ -432,14 +503,20 @@ impl EnhancedSearchEngine {
         }
         None
     }
-    
+
     /// Finds the message UUID that contains the result for a specific tool use.
-    fn find_tool_result_message(&mut self, tool_use_id: &str, session_node: &crate::tree::MerkleNode) -> Option<String> {
-        for (_child_key, child_hash) in &session_node.children {
+    fn find_tool_result_message(
+        &mut self,
+        tool_use_id: &str,
+        session_node: &crate::tree::MerkleNode,
+    ) -> Option<String> {
+        for child_hash in session_node.children.values() {
             if let Ok(Some(child_node)) = self.storage.get_node(child_hash) {
                 if let crate::tree::NodeType::Message { message_uuid, .. } = &child_node.node_type {
                     if let Some(ref content_data) = child_node.content {
-                        if let Ok(message) = serde_json::from_slice::<crate::types::ClaudeMessage>(content_data) {
+                        if let Ok(message) =
+                            serde_json::from_slice::<crate::types::ClaudeMessage>(content_data)
+                        {
                             // Check if this message contains a tool result for our tool use ID
                             let text_content = message.extract_all_text_content();
                             for text in text_content {
@@ -454,77 +531,84 @@ impl EnhancedSearchEngine {
         }
         None
     }
-    
-    
 
     /// Calculates relevance score for a thread with enhanced context awareness.
     fn calculate_thread_relevance(&self, thread: &ConversationThread, query: &str) -> f64 {
         let mut total_score = 0.0;
         let mut count = 0;
-        
+
         // Base relevance from message matches
         for message_ctx in &thread.messages {
             if let Some(search_match) = &message_ctx.search_match {
                 total_score += search_match.relevance;
                 count += 1;
-                
+
                 // Bonus for thinking content matches (more valuable insights)
                 if search_match.match_type == MatchType::Thinking {
                     total_score += 0.15;
                 }
-                
+
                 // Bonus for messages with rich context (preceding/following messages)
-                if !message_ctx.preceding_context.is_empty() || !message_ctx.following_context.is_empty() {
+                if !message_ctx.preceding_context.is_empty()
+                    || !message_ctx.following_context.is_empty()
+                {
                     total_score += 0.1;
                 }
             }
         }
-        
+
         // Tool usage relevance bonuses
         if !thread.tools_used.is_empty() {
             total_score += 0.1;
-            
+
             // Bonus for tool workflows (multiple related tools)
             if thread.tools_used.len() > 2 {
                 total_score += 0.15;
             }
-            
+
             // Bonus for tools with actual outputs (more actionable)
-            let tools_with_output = thread.tools_used.iter().filter(|t| t.output.is_some()).count();
+            let tools_with_output = thread
+                .tools_used
+                .iter()
+                .filter(|t| t.output.is_some())
+                .count();
             total_score += (tools_with_output as f64) * 0.05;
         }
-        
+
         // Query matches in tool names and parameters
         let query_lower = query.to_lowercase();
         for tool in &thread.tools_used {
             if tool.name.to_lowercase().contains(&query_lower) {
                 total_score += 0.2;
             }
-            
+
             // Check tool input parameters for query matches
             for (param_name, param_value) in &tool.input {
-                if param_name.to_lowercase().contains(&query_lower) ||
-                   param_value.to_string().to_lowercase().contains(&query_lower) {
+                if param_name.to_lowercase().contains(&query_lower)
+                    || param_value
+                        .to_string()
+                        .to_lowercase()
+                        .contains(&query_lower)
+                {
                     total_score += 0.1;
                 }
             }
         }
-        
+
         // Conversation length bonus (longer conversations often have more context)
         if thread.messages.len() > 5 {
             total_score += 0.05;
         }
-        
+
         if count > 0 {
-            total_score / count as f64
+            total_score / f64::from(count)
         } else {
             // Even threads without direct matches can be relevant due to tools
-            if !thread.tools_used.is_empty() {
-                0.2 // Base relevance for tool-related sessions
-            } else {
+            if thread.tools_used.is_empty() {
                 0.0
+            } else {
+                0.2 // Base relevance for tool-related sessions
             }
         }
     }
 }
-

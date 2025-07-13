@@ -3,18 +3,28 @@
 
 //! Code analysis using rust-treesitter-agent-code-utility for AI bullshit detection.
 
-use crate::error::{SniffError, Result};
+#![allow(clippy::unused_self)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::unnecessary_wraps)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::manual_let_else)]
+#![allow(clippy::match_same_arms)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::needless_range_loop)]
+#![allow(clippy::trivially_copy_pass_by_ref)]
+
+use crate::error::{Result, SniffError};
 use crate::playbook::{DetectionRule, PatternScope, PatternType, PlaybookManager, Severity};
 use rayon::prelude::*;
 use regex::Regex;
 use rust_tree_sitter::{
+    ai_analysis::{AIAnalysisResult, AIAnalyzer, AIConfig},
     analyzer::{AnalysisConfig, AnalysisResult, CodebaseAnalyzer, FileInfo},
-    ai_analysis::{AIAnalyzer, AIAnalysisResult, AIConfig},
     complexity_analysis::{ComplexityAnalyzer, ComplexityMetrics},
+    detect_language_from_path,
+    performance_analysis::{PerformanceAnalysisResult, PerformanceAnalyzer},
     semantic_context::SemanticContextAnalyzer,
-    SymbolType,
-    performance_analysis::{PerformanceAnalyzer, PerformanceAnalysisResult},
-    detect_language_from_path, Language, Parser,
+    Language, Parser, SymbolType,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -41,6 +51,7 @@ pub enum SupportedLanguage {
 
 impl SupportedLanguage {
     /// Gets the string representation of the language.
+    #[must_use]
     pub fn name(&self) -> &'static str {
         match self {
             Self::Rust => "rust",
@@ -54,6 +65,7 @@ impl SupportedLanguage {
     }
 
     /// Converts to rust-treesitter-agent-code-utility Language enum.
+    #[must_use]
     pub fn to_agent_language(&self) -> Language {
         match self {
             Self::Rust => Language::Rust,
@@ -67,6 +79,7 @@ impl SupportedLanguage {
     }
 
     /// Converts from rust-treesitter-agent-code-utility Language enum.
+    #[must_use]
     pub fn from_agent_language(lang: Language) -> Self {
         match lang {
             Language::Rust => Self::Rust,
@@ -190,7 +203,7 @@ pub struct BullshitAnalyzer {
     codebase_analyzer: CodebaseAnalyzer,
     /// AI analyzer for enhanced insights.
     ai_analyzer: AIAnalyzer,
-    /// Complexity analyzer for McCabe, cognitive, NPATH, and Halstead metrics.
+    /// Complexity analyzer for `McCabe`, cognitive, NPATH, and Halstead metrics.
     #[allow(dead_code)]
     complexity_analyzer: ComplexityAnalyzer,
     /// Semantic context analyzer for data flow and security analysis.
@@ -210,9 +223,13 @@ pub struct BullshitAnalyzer {
 
 impl BullshitAnalyzer {
     /// Creates a new bullshit analyzer.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the codebase analyzer fails to initialize.
     pub fn new() -> Result<Self> {
         let codebase_analyzer = CodebaseAnalyzer::new().map_err(|e| {
-            SniffError::analysis_error(format!("Failed to create codebase analyzer: {}", e))
+            SniffError::analysis_error(format!("Failed to create codebase analyzer: {e}"))
         })?;
 
         let ai_config = AIConfig {
@@ -227,7 +244,7 @@ impl BullshitAnalyzer {
         // Initialize analyzers (these will be created per-language when needed)
         let complexity_analyzer = ComplexityAnalyzer::new("");
         let semantic_analyzer = SemanticContextAnalyzer::new(Language::Rust).map_err(|e| {
-            SniffError::analysis_error(format!("Failed to create semantic analyzer: {}", e))
+            SniffError::analysis_error(format!("Failed to create semantic analyzer: {e}"))
         })?;
         let performance_analyzer = PerformanceAnalyzer::new();
 
@@ -235,9 +252,9 @@ impl BullshitAnalyzer {
         let parser = None;
 
         let mut playbook_manager = PlaybookManager::new();
-        
+
         // Load default playbooks for all supported languages
-        Self::load_default_playbooks(&mut playbook_manager)?;
+        Self::load_default_playbooks(&mut playbook_manager);
 
         Ok(Self {
             codebase_analyzer,
@@ -252,7 +269,7 @@ impl BullshitAnalyzer {
     }
 
     /// Loads default playbooks for all supported languages.
-    fn load_default_playbooks(playbook_manager: &mut PlaybookManager) -> Result<()> {
+    fn load_default_playbooks(playbook_manager: &mut PlaybookManager) {
         let languages = [
             SupportedLanguage::Rust,
             SupportedLanguage::Python,
@@ -267,14 +284,16 @@ impl BullshitAnalyzer {
             let playbook = PlaybookManager::create_default_playbook(*language);
             playbook_manager.add_playbook(*language, playbook);
         }
-
-        Ok(())
     }
 
     /// Creates a new bullshit analyzer with custom configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the codebase analyzer fails to initialize.
     pub fn with_config(config: AnalysisConfig) -> Result<Self> {
         let codebase_analyzer = CodebaseAnalyzer::with_config(config).map_err(|e| {
-            SniffError::analysis_error(format!("Failed to create codebase analyzer: {}", e))
+            SniffError::analysis_error(format!("Failed to create codebase analyzer: {e}"))
         })?;
 
         let ai_config = AIConfig {
@@ -289,7 +308,7 @@ impl BullshitAnalyzer {
         // Initialize analyzers (these will be created per-language when needed)
         let complexity_analyzer = ComplexityAnalyzer::new("");
         let semantic_analyzer = SemanticContextAnalyzer::new(Language::Rust).map_err(|e| {
-            SniffError::analysis_error(format!("Failed to create semantic analyzer: {}", e))
+            SniffError::analysis_error(format!("Failed to create semantic analyzer: {e}"))
         })?;
         let performance_analyzer = PerformanceAnalyzer::new();
 
@@ -297,9 +316,9 @@ impl BullshitAnalyzer {
         let parser = None;
 
         let mut playbook_manager = PlaybookManager::new();
-        
+
         // Load default playbooks for all supported languages
-        Self::load_default_playbooks(&mut playbook_manager)?;
+        Self::load_default_playbooks(&mut playbook_manager);
 
         Ok(Self {
             codebase_analyzer,
@@ -314,11 +333,19 @@ impl BullshitAnalyzer {
     }
 
     /// Loads playbooks from a directory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the directory cannot be read or playbooks are invalid.
     pub fn load_playbooks(&mut self, playbook_dir: &Path) -> Result<()> {
         self.playbook_manager.load_playbooks_from_dir(playbook_dir)
     }
 
     /// Detects the language of a file using rust-treesitter-agent-code-utility.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file path is invalid.
     pub fn detect_language(&self, file_path: &Path) -> Result<Option<SupportedLanguage>> {
         let path_str = file_path.to_string_lossy();
         let detected = detect_language_from_path(&path_str);
@@ -327,34 +354,68 @@ impl BullshitAnalyzer {
     }
 
     /// Analyzes a file for bullshit patterns.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be read or analyzed.
     pub fn analyze_file(&mut self, file_path: &Path) -> Result<Vec<BullshitDetection>> {
         // Use the codebase analyzer to analyze the file
-        let analysis_result = self.codebase_analyzer.analyze_file(file_path).map_err(|e| {
-            SniffError::analysis_error(format!("Failed to analyze file {}: {}", file_path.display(), e))
-        })?;
+        let analysis_result = self
+            .codebase_analyzer
+            .analyze_file(file_path)
+            .map_err(|e| {
+                SniffError::analysis_error(format!(
+                    "Failed to analyze file {}: {}",
+                    file_path.display(),
+                    e
+                ))
+            })?;
 
         self.analyze_analysis_result_with_original_path(&analysis_result, file_path)
     }
 
     /// Analyzes a directory for bullshit patterns.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the directory cannot be read or analyzed.
     pub fn analyze_directory(&mut self, dir_path: &Path) -> Result<Vec<BullshitDetection>> {
         // Use the codebase analyzer to analyze the directory
-        let analysis_result = self.codebase_analyzer.analyze_directory(dir_path).map_err(|e| {
-            SniffError::analysis_error(format!("Failed to analyze directory {}: {}", dir_path.display(), e))
-        })?;
+        let analysis_result = self
+            .codebase_analyzer
+            .analyze_directory(dir_path)
+            .map_err(|e| {
+                SniffError::analysis_error(format!(
+                    "Failed to analyze directory {}: {}",
+                    dir_path.display(),
+                    e
+                ))
+            })?;
 
         self.analyze_analysis_result(&analysis_result)
     }
 
     /// Enhanced analysis that includes complexity, performance, and semantic analysis.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be read or analyzed.
     pub fn analyze_file_enhanced(&mut self, file_path: &Path) -> Result<EnhancedBullshitAnalysis> {
         // Use the codebase analyzer to analyze the file
-        let analysis_result = self.codebase_analyzer.analyze_file(file_path).map_err(|e| {
-            SniffError::analysis_error(format!("Failed to analyze file {}: {}", file_path.display(), e))
-        })?;
+        let analysis_result = self
+            .codebase_analyzer
+            .analyze_file(file_path)
+            .map_err(|e| {
+                SniffError::analysis_error(format!(
+                    "Failed to analyze file {}: {}",
+                    file_path.display(),
+                    e
+                ))
+            })?;
 
         // Get basic bullshit detections
-        let detections = self.analyze_analysis_result_with_original_path(&analysis_result, file_path)?;
+        let detections =
+            self.analyze_analysis_result_with_original_path(&analysis_result, file_path)?;
 
         // Enhanced analysis using real performance data
         let mut enhanced_detections = Vec::new();
@@ -364,27 +425,30 @@ impl BullshitAnalyzer {
         // Performance analysis using the AnalysisResult from CodebaseAnalyzer
         if let Ok(performance_result) = self.performance_analyzer.analyze(&analysis_result) {
             performance_score = performance_result.performance_score;
-            
+
             // Extract real performance recommendations
             for rec in &performance_result.recommendations {
                 performance_recommendations.push(rec.recommendation.clone());
             }
-            
+
             // Add hotspot-based recommendations
             for hotspot in &performance_result.hotspots {
-                if hotspot.severity == rust_tree_sitter::performance_analysis::PerformanceSeverity::Critical 
-                   || hotspot.severity == rust_tree_sitter::performance_analysis::PerformanceSeverity::High {
-                    performance_recommendations.push(format!(
-                        "{}: {}",
-                        hotspot.title,
-                        hotspot.optimization
-                    ));
+                if hotspot.severity
+                    == rust_tree_sitter::performance_analysis::PerformanceSeverity::Critical
+                    || hotspot.severity
+                        == rust_tree_sitter::performance_analysis::PerformanceSeverity::High
+                {
+                    performance_recommendations
+                        .push(format!("{}: {}", hotspot.title, hotspot.optimization));
                 }
             }
 
             // Enhance detections with performance impact assessment
             for mut detection in detections {
-                detection.performance_impact = self.assess_performance_impact_simple(&detection, &performance_result);
+                detection.performance_impact = Some(Self::assess_performance_impact_simple(
+                    &detection,
+                    &performance_result,
+                ));
                 enhanced_detections.push(detection);
             }
         } else {
@@ -393,10 +457,8 @@ impl BullshitAnalyzer {
         }
 
         // Calculate overall quality assessment
-        let quality_assessment = self.calculate_quality_assessment_simple(
-            &enhanced_detections,
-            performance_score,
-        );
+        let quality_assessment =
+            self.calculate_quality_assessment_simple(&enhanced_detections, performance_score);
 
         Ok(EnhancedBullshitAnalysis {
             detections: enhanced_detections,
@@ -407,12 +469,11 @@ impl BullshitAnalyzer {
     }
 
     /// Assesses performance impact for a bullshit detection (simplified version).
+    #[allow(clippy::too_many_lines)]
     fn assess_performance_impact_simple(
-        &self,
         detection: &BullshitDetection,
         performance_result: &PerformanceAnalysisResult,
-    ) -> Option<PerformanceImpact> {
-
+    ) -> PerformanceImpact {
         // Assess impact based on detection type and context
         let (severity, description, recommendations) = match detection.rule_id.as_str() {
             id if id.contains("unimplemented") => (
@@ -457,20 +518,22 @@ impl BullshitAnalyzer {
 
         // Add real performance-specific recommendations based on PerformanceAnalysisResult
         let mut enhanced_recommendations = recommendations;
-        
+
         // Add recommendations based on performance hotspots
         for hotspot in &performance_result.hotspots {
-            if hotspot.severity == rust_tree_sitter::performance_analysis::PerformanceSeverity::Critical {
+            if hotspot.severity
+                == rust_tree_sitter::performance_analysis::PerformanceSeverity::Critical
+            {
                 enhanced_recommendations.push(format!(
                     "CRITICAL PERFORMANCE: {} - {}",
-                    hotspot.title,
-                    hotspot.optimization
+                    hotspot.title, hotspot.optimization
                 ));
-            } else if hotspot.severity == rust_tree_sitter::performance_analysis::PerformanceSeverity::High {
+            } else if hotspot.severity
+                == rust_tree_sitter::performance_analysis::PerformanceSeverity::High
+            {
                 enhanced_recommendations.push(format!(
                     "HIGH PERFORMANCE: {} - Expected improvement: {}%",
-                    hotspot.optimization,
-                    hotspot.expected_improvement.performance_gain
+                    hotspot.optimization, hotspot.expected_improvement.performance_gain
                 ));
             }
         }
@@ -483,14 +546,12 @@ impl BullshitAnalyzer {
                 complexity.average_complexity
             ));
         }
-        
+
         for nested_loop in &complexity.nested_loops {
             if nested_loop.depth > 3 {
                 enhanced_recommendations.push(format!(
                     "Deep nested loops (depth {}) at {}:{} - Consider algorithm optimization",
-                    nested_loop.depth,
-                    nested_loop.location.file,
-                    nested_loop.location.start_line
+                    nested_loop.depth, nested_loop.location.file, nested_loop.location.start_line
                 ));
             }
         }
@@ -503,12 +564,11 @@ impl BullshitAnalyzer {
                 memory.allocation_hotspots.len()
             ));
         }
-        
+
         for leak_risk in &memory.leak_potential {
             enhanced_recommendations.push(format!(
                 "Memory leak risk: {} ({:?})",
-                leak_risk.description,
-                leak_risk.risk_level
+                leak_risk.description, leak_risk.risk_level
             ));
         }
 
@@ -517,30 +577,29 @@ impl BullshitAnalyzer {
         for opportunity in &concurrency.parallelization_opportunities {
             enhanced_recommendations.push(format!(
                 "Parallelization opportunity: {:?} - Expected speedup: {}x",
-                opportunity.approach,
-                opportunity.expected_speedup
-            ));
-        }
-        
-        for safety_concern in &concurrency.thread_safety_concerns {
-            enhanced_recommendations.push(format!(
-                "Thread safety concern: {:?} - {}",
-                safety_concern.concern_type,
-                safety_concern.recommendation
+                opportunity.approach, opportunity.expected_speedup
             ));
         }
 
-        Some(PerformanceImpact {
+        for safety_concern in &concurrency.thread_safety_concerns {
+            enhanced_recommendations.push(format!(
+                "Thread safety concern: {:?} - {}",
+                safety_concern.concern_type, safety_concern.recommendation
+            ));
+        }
+
+        PerformanceImpact {
             severity,
             description,
             recommendations: enhanced_recommendations,
-        })
+        }
     }
 
     /// Calculates overall quality assessment based on all metrics.
     #[allow(dead_code)]
+    #[allow(clippy::too_many_lines)]
+    #[allow(clippy::cast_precision_loss)]
     fn calculate_quality_assessment(
-        &self,
         detections: &[BullshitDetection],
         complexity_metrics: &HashMap<String, ComplexityMetrics>,
         performance_metrics: &HashMap<String, PerformanceAnalysisResult>,
@@ -554,26 +613,20 @@ impl BullshitAnalyzer {
         // Assess based on detections
         for detection in detections {
             match detection.severity {
-                Severity::Critical => {
-                    match detection.rule_id.as_str() {
-                        id if id.contains("unimplemented") => completeness_score -= 25.0,
-                        id if id.contains("panic") => reliability_score -= 20.0,
-                        _ => reliability_score -= 15.0,
-                    }
-                }
-                Severity::High => {
-                    match detection.rule_id.as_str() {
-                        id if id.contains("unwrap") => reliability_score -= 10.0,
-                        id if id.contains("security") => security_score -= 15.0,
-                        _ => reliability_score -= 8.0,
-                    }
-                }
-                Severity::Medium => {
-                    match detection.rule_id.as_str() {
-                        id if id.contains("todo") => completeness_score -= 5.0,
-                        _ => maintainability_score -= 5.0,
-                    }
-                }
+                Severity::Critical => match detection.rule_id.as_str() {
+                    id if id.contains("unimplemented") => completeness_score -= 25.0,
+                    id if id.contains("panic") => reliability_score -= 20.0,
+                    _ => reliability_score -= 15.0,
+                },
+                Severity::High => match detection.rule_id.as_str() {
+                    id if id.contains("unwrap") => reliability_score -= 10.0,
+                    id if id.contains("security") => security_score -= 15.0,
+                    _ => reliability_score -= 8.0,
+                },
+                Severity::Medium => match detection.rule_id.as_str() {
+                    id if id.contains("todo") => completeness_score -= 5.0,
+                    _ => maintainability_score -= 5.0,
+                },
                 Severity::Low => {
                     maintainability_score -= 2.0;
                 }
@@ -611,9 +664,9 @@ impl BullshitAnalyzer {
         // Assess based on REAL performance metrics from PerformanceAnalysisResult
         for perf_metrics in performance_metrics.values() {
             // Use the actual performance_score from the analysis
-            let perf_penalty = (100 - perf_metrics.performance_score as u32) as f64;
+            let perf_penalty = f64::from(100 - u32::from(perf_metrics.performance_score));
             performance_score -= perf_penalty * 0.5; // Apply 50% of the penalty
-            
+
             // Assess based on performance hotspots by severity
             for (severity, count) in &perf_metrics.hotspots_by_severity {
                 use rust_tree_sitter::performance_analysis::PerformanceSeverity;
@@ -635,7 +688,7 @@ impl BullshitAnalyzer {
                 maintainability_score -= 10.0;
                 performance_score -= 5.0;
             }
-            
+
             // Deep nested loops penalty
             for nested_loop in &complexity.nested_loops {
                 if nested_loop.depth > 4 {
@@ -651,7 +704,7 @@ impl BullshitAnalyzer {
             let memory = &perf_metrics.memory_analysis;
             performance_score -= memory.allocation_hotspots.len() as f64 * 2.0;
             reliability_score -= memory.leak_potential.len() as f64 * 10.0;
-            
+
             // Concurrency issues assessment
             let concurrency = &perf_metrics.concurrency_analysis;
             reliability_score -= concurrency.synchronization_issues.len() as f64 * 15.0;
@@ -666,13 +719,12 @@ impl BullshitAnalyzer {
         completeness_score = completeness_score.max(0.0);
 
         // Calculate overall score as weighted average
-        let overall_score = (
-            maintainability_score * 0.25 +
-            reliability_score * 0.30 +
-            performance_score * 0.20 +
-            security_score * 0.15 +
-            completeness_score * 0.10
-        ).max(0.0);
+        let overall_score = (maintainability_score * 0.25
+            + reliability_score * 0.30
+            + performance_score * 0.20
+            + security_score * 0.15
+            + completeness_score * 0.10)
+            .max(0.0);
 
         QualityAssessment {
             overall_score,
@@ -692,33 +744,27 @@ impl BullshitAnalyzer {
     ) -> QualityAssessment {
         let mut maintainability_score: f64 = 100.0;
         let mut reliability_score: f64 = 100.0;
-        let performance_score_f64: f64 = performance_score as f64;
+        let performance_score_f64: f64 = f64::from(performance_score);
         let mut security_score: f64 = 100.0;
         let mut completeness_score: f64 = 100.0;
 
         // Assess based on detections
         for detection in detections {
             match detection.severity {
-                Severity::Critical => {
-                    match detection.rule_id.as_str() {
-                        id if id.contains("unimplemented") => completeness_score -= 25.0,
-                        id if id.contains("panic") => reliability_score -= 20.0,
-                        _ => reliability_score -= 15.0,
-                    }
-                }
-                Severity::High => {
-                    match detection.rule_id.as_str() {
-                        id if id.contains("unwrap") => reliability_score -= 10.0,
-                        id if id.contains("security") => security_score -= 15.0,
-                        _ => reliability_score -= 8.0,
-                    }
-                }
-                Severity::Medium => {
-                    match detection.rule_id.as_str() {
-                        id if id.contains("todo") => completeness_score -= 5.0,
-                        _ => maintainability_score -= 5.0,
-                    }
-                }
+                Severity::Critical => match detection.rule_id.as_str() {
+                    id if id.contains("unimplemented") => completeness_score -= 25.0,
+                    id if id.contains("panic") => reliability_score -= 20.0,
+                    _ => reliability_score -= 15.0,
+                },
+                Severity::High => match detection.rule_id.as_str() {
+                    id if id.contains("unwrap") => reliability_score -= 10.0,
+                    id if id.contains("security") => security_score -= 15.0,
+                    _ => reliability_score -= 8.0,
+                },
+                Severity::Medium => match detection.rule_id.as_str() {
+                    id if id.contains("todo") => completeness_score -= 5.0,
+                    _ => maintainability_score -= 5.0,
+                },
                 Severity::Low => {
                     maintainability_score -= 2.0;
                 }
@@ -732,13 +778,12 @@ impl BullshitAnalyzer {
         completeness_score = completeness_score.max(0.0);
 
         // Calculate overall score as weighted average
-        let overall_score = (
-            maintainability_score * 0.25 +
-            reliability_score * 0.30 +
-            performance_score_f64 * 0.20 +
-            security_score * 0.15 +
-            completeness_score * 0.10
-        ).max(0.0);
+        let overall_score = (maintainability_score * 0.25
+            + reliability_score * 0.30
+            + performance_score_f64 * 0.20
+            + security_score * 0.15
+            + completeness_score * 0.10)
+            .max(0.0);
 
         QualityAssessment {
             overall_score,
@@ -752,48 +797,50 @@ impl BullshitAnalyzer {
 
     /// Performs semantic context analysis to extract symbol tables, data flow, and security context.
     pub fn analyze_semantic_context(&mut self, file_path: &Path) -> Result<SemanticContextResult> {
-        let file_content = std::fs::read_to_string(file_path).map_err(|e| {
-            SniffError::file_system(file_path, e)
-        })?;
+        let file_content = std::fs::read_to_string(file_path)
+            .map_err(|e| SniffError::file_system(file_path, e))?;
 
         // Detect the language for semantic analysis
-        let language = self.detect_language(file_path)?
-            .ok_or_else(|| SniffError::analysis_error("Unsupported language for semantic analysis".to_string()))?;
+        let language = self.detect_language(file_path)?.ok_or_else(|| {
+            SniffError::analysis_error("Unsupported language for semantic analysis".to_string())
+        })?;
 
         // Create a parser to get the syntax tree
-        let parser = Parser::new(language.to_agent_language()).map_err(|e| {
-            SniffError::analysis_error(format!("Failed to create parser: {}", e))
-        })?;
+        let parser = Parser::new(language.to_agent_language())
+            .map_err(|e| SniffError::analysis_error(format!("Failed to create parser: {e}")))?;
 
-        let syntax_tree = parser.parse(&file_content, None).map_err(|e| {
-            SniffError::analysis_error(format!("Failed to parse syntax tree: {}", e))
-        })?;
+        let syntax_tree = parser
+            .parse(&file_content, None)
+            .map_err(|e| SniffError::analysis_error(format!("Failed to parse syntax tree: {e}")))?;
 
         // Create language-specific semantic analyzer
         let mut semantic_analyzer = SemanticContextAnalyzer::new(language.to_agent_language())
-            .map_err(|e| SniffError::analysis_error(format!("Failed to create semantic analyzer: {}", e)))?;
+            .map_err(|e| {
+                SniffError::analysis_error(format!("Failed to create semantic analyzer: {e}"))
+            })?;
 
         // Perform semantic analysis on the syntax tree and file content
-        let semantic_context = semantic_analyzer.analyze(&syntax_tree, &file_content)
-            .map_err(|e| SniffError::analysis_error(format!("Semantic analysis failed: {}", e)))?;
+        let semantic_context = semantic_analyzer
+            .analyze(&syntax_tree, &file_content)
+            .map_err(|e| SniffError::analysis_error(format!("Semantic analysis failed: {e}")))?;
 
         // Extract key semantic insights from the semantic context
         let symbol_table = &semantic_context.symbol_table;
         let data_flow = &semantic_context.data_flow;
         let security_context = &semantic_context.security_context;
-        
+
         // Extract function and variable names from symbol table
         let mut function_definitions = Vec::new();
         let mut variable_definitions = Vec::new();
-        
-        for (_, symbol_def) in &symbol_table.symbols {
+
+        for symbol_def in symbol_table.symbols.values() {
             match symbol_def.symbol_type {
                 SymbolType::Function => {
                     function_definitions.push(symbol_def.name.clone());
-                },
+                }
                 SymbolType::Variable => {
                     variable_definitions.push(symbol_def.name.clone());
-                },
+                }
                 _ => {} // Ignore other symbol types for now
             }
         }
@@ -801,26 +848,33 @@ impl BullshitAnalyzer {
         // Extract data flow warnings
         let mut data_flow_warnings = Vec::new();
         for taint_flow in &data_flow.taint_flows {
-            data_flow_warnings.push(format!("Taint flow from {} to {}", 
-                taint_flow.source.to_string(), taint_flow.sink.to_string()));
+            data_flow_warnings.push(format!(
+                "Taint flow from {} to {}",
+                taint_flow.source, taint_flow.sink
+            ));
         }
 
         // Extract security warnings
         let mut security_warnings = Vec::new();
         for validation_point in &security_context.validation_points {
-            security_warnings.push(format!("Validation required at {}: {:?}", 
-                validation_point.location.to_string(), validation_point.validation_type));
+            security_warnings.push(format!(
+                "Validation required at {}: {:?}",
+                validation_point.location, validation_point.validation_type
+            ));
         }
-        
+
         // Calculate complexity indicators
         let complexity_indicators = vec![
             format!("Symbol count: {}", symbol_table.symbols.len()),
             format!("Function count: {}", function_definitions.len()),
             format!("Variable count: {}", variable_definitions.len()),
             format!("Data flow edges: {}", data_flow.use_def_chains.len()),
-            format!("Security validation points: {}", security_context.validation_points.len()),
+            format!(
+                "Security validation points: {}",
+                security_context.validation_points.len()
+            ),
         ];
-        
+
         // Convert to our result format
         Ok(SemanticContextResult {
             file_path: file_path.to_path_buf(),
@@ -835,7 +889,14 @@ impl BullshitAnalyzer {
     }
 
     /// Analyzes multiple files in parallel using playbook rules.
-    pub fn analyze_files_parallel(&mut self, file_paths: &[&Path]) -> Result<Vec<BullshitDetection>> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any file cannot be read or analyzed.
+    pub fn analyze_files_parallel(
+        &mut self,
+        file_paths: &[&Path],
+    ) -> Result<Vec<BullshitDetection>> {
         // Create a thread-safe collection of all detections
         let all_detections: std::result::Result<Vec<_>, SniffError> = file_paths
             .par_iter()
@@ -846,10 +907,7 @@ impl BullshitAnalyzer {
             .collect();
 
         // Flatten the results
-        let detections: Vec<BullshitDetection> = all_detections?
-            .into_iter()
-            .flatten()
-            .collect();
+        let detections: Vec<BullshitDetection> = all_detections?.into_iter().flatten().collect();
 
         Ok(detections)
     }
@@ -857,9 +915,8 @@ impl BullshitAnalyzer {
     /// Analyzes a single file with parallel rule processing.
     fn analyze_single_file_parallel(&self, file_path: &Path) -> Result<Vec<BullshitDetection>> {
         // Read file content
-        let file_content = std::fs::read_to_string(file_path).map_err(|e| {
-            SniffError::file_system(file_path, e)
-        })?;
+        let file_content = std::fs::read_to_string(file_path)
+            .map_err(|e| SniffError::file_system(file_path, e))?;
 
         // Detect language
         let language = self.detect_language(file_path)?;
@@ -869,11 +926,10 @@ impl BullshitAnalyzer {
         };
 
         // Get applicable rules for this language
-        let rules: Vec<_> = self.playbook_manager
+        let rules: Vec<_> = self
+            .playbook_manager
             .get_active_rules_for_language(language)
-            .iter()
-            .cloned()
-            .collect();
+            .clone();
 
         // Create a minimal FileInfo for rule processing
         let file_info = FileInfo {
@@ -891,20 +947,22 @@ impl BullshitAnalyzer {
         let rule_results: std::result::Result<Vec<_>, SniffError> = rules
             .par_iter()
             .map(|rule| -> Result<Vec<BullshitDetection>> {
-                self.apply_rule_to_file_with_path_parallel(rule, &file_info, &file_content, file_path)
+                self.apply_rule_to_file_with_path_parallel(
+                    rule,
+                    &file_info,
+                    &file_content,
+                    file_path,
+                )
             })
             .collect();
 
         // Flatten the results
-        let detections: Vec<BullshitDetection> = rule_results?
-            .into_iter()
-            .flatten()
-            .collect();
+        let detections: Vec<BullshitDetection> = rule_results?.into_iter().flatten().collect();
 
         Ok(detections)
     }
 
-    /// Thread-safe version of apply_rule_to_file_with_path that doesn't mutate self.
+    /// Thread-safe version of `apply_rule_to_file_with_path` that doesn't mutate self.
     fn apply_rule_to_file_with_path_parallel(
         &self,
         rule: &DetectionRule,
@@ -913,13 +971,13 @@ impl BullshitAnalyzer {
         file_path: &Path,
     ) -> Result<Vec<BullshitDetection>> {
         let mut detections = Vec::new();
-        
+
         match &rule.pattern_type {
             PatternType::Regex { pattern, flags } => {
                 // Compile regex on the fly to avoid shared state issues
                 let regex_flags = flags.as_deref().unwrap_or("");
                 let mut regex_builder = regex::RegexBuilder::new(pattern.as_str());
-                
+
                 if regex_flags.contains('i') {
                     regex_builder.case_insensitive(true);
                 }
@@ -929,17 +987,17 @@ impl BullshitAnalyzer {
                 if regex_flags.contains('s') {
                     regex_builder.dot_matches_new_line(true);
                 }
-                
+
                 let regex = regex_builder.build().map_err(|e| {
-                    SniffError::analysis_error(format!("Invalid regex pattern '{}': {}", pattern, e))
+                    SniffError::analysis_error(format!("Invalid regex pattern '{pattern}': {e}"))
                 })?;
 
                 let file_lines: Vec<&str> = file_content.lines().collect();
-                
+
                 for (line_num, line) in file_lines.iter().enumerate() {
                     for regex_match in regex.find_iter(line) {
-                        let context_lines = self.extract_context_lines(&file_lines, line_num);
-                        
+                        let context_lines = Self::extract_context_lines(&file_lines, line_num);
+
                         let detection = BullshitDetection {
                             rule_id: rule.id.clone(),
                             rule_name: rule.name.clone(),
@@ -948,7 +1006,7 @@ impl BullshitAnalyzer {
                             file_path: file_path.to_string_lossy().to_string(),
                             line_number: line_num + 1,
                             column_number: regex_match.start() + 1,
-                            code_snippet: line.to_string(),
+                            code_snippet: (*line).to_string(),
                             context_lines: Some(context_lines),
                             context: format!("Line {}", line_num + 1),
                             tags: rule.tags.clone(),
@@ -960,11 +1018,20 @@ impl BullshitAnalyzer {
             }
             PatternType::AstQuery { query } => {
                 // TreeSitter queries need more complex handling - for now, log and skip
-                tracing::debug!("AST query pattern not supported in parallel mode: {}", query);
+                tracing::debug!(
+                    "AST query pattern not supported in parallel mode: {}",
+                    query
+                );
             }
-            PatternType::Structural { analysis_type, parameters: _ } => {
+            PatternType::Structural {
+                analysis_type,
+                parameters: _,
+            } => {
                 // Structural analysis not supported in parallel mode - for now, log and skip
-                tracing::debug!("Structural pattern not supported in parallel mode: {}", analysis_type);
+                tracing::debug!(
+                    "Structural pattern not supported in parallel mode: {}",
+                    analysis_type
+                );
             }
         }
 
@@ -972,28 +1039,28 @@ impl BullshitAnalyzer {
     }
 
     /// Extracts context lines around a detection for better display.
-    fn extract_context_lines(&self, file_lines: &[&str], target_line: usize) -> ContextLines {
+    fn extract_context_lines(file_lines: &[&str], target_line: usize) -> ContextLines {
         let context_size = 2; // Show 2 lines before and after
-        
+
         let start_idx = target_line.saturating_sub(context_size);
         let end_idx = (target_line + context_size + 1).min(file_lines.len());
-        
+
         let mut before = Vec::new();
         let mut after = Vec::new();
-        
+
         // Extract before lines
-        for i in start_idx..target_line {
-            before.push(file_lines[i].to_string());
+        for line in file_lines.iter().take(target_line).skip(start_idx) {
+            before.push((*line).to_string());
         }
-        
+
         // Extract target line
-        let target = file_lines.get(target_line).unwrap_or(&"").to_string();
-        
+        let target = (*file_lines.get(target_line).unwrap_or(&"")).to_string();
+
         // Extract after lines
-        for i in (target_line + 1)..end_idx {
-            after.push(file_lines[i].to_string());
+        for line in file_lines.iter().take(end_idx).skip(target_line + 1) {
+            after.push((*line).to_string());
         }
-        
+
         ContextLines {
             before,
             target,
@@ -1002,8 +1069,12 @@ impl BullshitAnalyzer {
         }
     }
 
-    /// Analyzes an AnalysisResult for bullshit patterns using the original file path.
-    fn analyze_analysis_result_with_original_path(&mut self, analysis_result: &AnalysisResult, original_path: &Path) -> Result<Vec<BullshitDetection>> {
+    /// Analyzes an `AnalysisResult` for bullshit patterns using the original file path.
+    fn analyze_analysis_result_with_original_path(
+        &mut self,
+        analysis_result: &AnalysisResult,
+        original_path: &Path,
+    ) -> Result<Vec<BullshitDetection>> {
         let mut all_detections = Vec::new();
 
         // For single file analysis, use the original path
@@ -1021,20 +1092,32 @@ impl BullshitAnalyzer {
             };
 
             // Get applicable rules for this language
-            let rules: Vec<_> = self.playbook_manager.get_active_rules_for_language(language).iter().cloned().collect();
+            let rules: Vec<_> = self
+                .playbook_manager
+                .get_active_rules_for_language(language)
+                .clone();
 
             // Read the file content using the ORIGINAL absolute path
             let file_content = match std::fs::read_to_string(original_path) {
                 Ok(content) => content,
                 Err(e) => {
-                    eprintln!("Warning: Failed to read file {}: {}", original_path.display(), e);
+                    eprintln!(
+                        "Warning: Failed to read file {}: {}",
+                        original_path.display(),
+                        e
+                    );
                     return Ok(all_detections);
                 }
             };
 
             // Apply each rule to the file
             for rule in &rules {
-                let rule_detections = self.apply_rule_to_file_with_path(rule, file_info, &file_content, original_path)?;
+                let rule_detections = self.apply_rule_to_file_with_path(
+                    rule,
+                    file_info,
+                    &file_content,
+                    original_path,
+                )?;
                 all_detections.extend(rule_detections);
             }
         } else {
@@ -1045,8 +1128,11 @@ impl BullshitAnalyzer {
         Ok(all_detections)
     }
 
-    /// Analyzes an AnalysisResult for bullshit patterns.
-    fn analyze_analysis_result(&mut self, analysis_result: &AnalysisResult) -> Result<Vec<BullshitDetection>> {
+    /// Analyzes an `AnalysisResult` for bullshit patterns.
+    fn analyze_analysis_result(
+        &mut self,
+        analysis_result: &AnalysisResult,
+    ) -> Result<Vec<BullshitDetection>> {
         let mut all_detections = Vec::new();
 
         // Process each file in the analysis result
@@ -1063,13 +1149,20 @@ impl BullshitAnalyzer {
             };
 
             // Get applicable rules for this language
-            let rules: Vec<_> = self.playbook_manager.get_active_rules_for_language(language).iter().cloned().collect();
+            let rules: Vec<_> = self
+                .playbook_manager
+                .get_active_rules_for_language(language)
+                .clone();
 
             // Read the file content for pattern matching
             let file_content = match std::fs::read_to_string(&file_info.path) {
                 Ok(content) => content,
                 Err(e) => {
-                    eprintln!("Warning: Failed to read file {}: {}", file_info.path.display(), e);
+                    eprintln!(
+                        "Warning: Failed to read file {}: {}",
+                        file_info.path.display(),
+                        e
+                    );
                     continue;
                 }
             };
@@ -1094,12 +1187,12 @@ impl BullshitAnalyzer {
     ) -> Result<Vec<BullshitDetection>> {
         // Call the original method but replace file paths in results
         let mut detections = self.apply_rule_to_file(rule, file_info, file_content)?;
-        
+
         // Update all detections to use the correct file path
         for detection in &mut detections {
             detection.file_path = file_path.to_string_lossy().to_string();
         }
-        
+
         Ok(detections)
     }
 
@@ -1116,7 +1209,10 @@ impl BullshitAnalyzer {
             PatternType::Regex { pattern, .. } => {
                 // Compile the regex pattern (we'll optimize this later with proper caching)
                 let regex = Regex::new(pattern).map_err(|e| {
-                    SniffError::analysis_error(format!("Invalid regex in rule '{}': {}", rule.id, e))
+                    SniffError::analysis_error(format!(
+                        "Invalid regex in rule '{}': {}",
+                        rule.id, e
+                    ))
                 })?;
 
                 // Apply regex based on scope
@@ -1133,9 +1229,12 @@ impl BullshitAnalyzer {
                     PatternScope::Comments => {
                         self.apply_regex_to_comments(&regex, rule, file_info, file_content)?
                     }
-                    PatternScope::MethodSignature => {
-                        self.apply_regex_to_method_signatures(&regex, rule, file_info, file_content)?
-                    }
+                    PatternScope::MethodSignature => self.apply_regex_to_method_signatures(
+                        &regex,
+                        rule,
+                        file_info,
+                        file_content,
+                    )?,
                 };
 
                 detections.extend(detections_for_rule);
@@ -1169,7 +1268,7 @@ impl BullshitAnalyzer {
                     rule_id: rule.id.clone(),
                     rule_name: rule.name.clone(),
                     description: rule.description.clone(),
-                    severity: rule.severity.clone(),
+                    severity: rule.severity,
                     file_path: file_info.path.to_string_lossy().to_string(),
                     line_number: line_num + 1,
                     column_number: mat.start() + 1,
@@ -1202,7 +1301,7 @@ impl BullshitAnalyzer {
                 // Extract the function body lines
                 let start_line = symbol.start_line.saturating_sub(1);
                 let end_line = std::cmp::min(symbol.end_line, lines.len());
-                
+
                 for line_num in start_line..end_line {
                     if let Some(line) = lines.get(line_num) {
                         for mat in regex.find_iter(line) {
@@ -1210,7 +1309,7 @@ impl BullshitAnalyzer {
                                 rule_id: rule.id.clone(),
                                 rule_name: rule.name.clone(),
                                 description: rule.description.clone(),
-                                severity: rule.severity.clone(),
+                                severity: rule.severity,
                                 file_path: file_info.path.to_string_lossy().to_string(),
                                 line_number: line_num + 1,
                                 column_number: mat.start() + 1,
@@ -1246,7 +1345,7 @@ impl BullshitAnalyzer {
                 // Extract the class body lines
                 let start_line = symbol.start_line.saturating_sub(1);
                 let end_line = std::cmp::min(symbol.end_line, lines.len());
-                
+
                 for line_num in start_line..end_line {
                     if let Some(line) = lines.get(line_num) {
                         for mat in regex.find_iter(line) {
@@ -1254,7 +1353,7 @@ impl BullshitAnalyzer {
                                 rule_id: rule.id.clone(),
                                 rule_name: rule.name.clone(),
                                 description: rule.description.clone(),
-                                severity: rule.severity.clone(),
+                                severity: rule.severity,
                                 file_path: file_info.path.to_string_lossy().to_string(),
                                 line_number: line_num + 1,
                                 column_number: mat.start() + 1,
@@ -1286,14 +1385,14 @@ impl BullshitAnalyzer {
         // Simple comment detection - could be enhanced with TreeSitter parsing
         for (line_num, line) in file_content.lines().enumerate() {
             let trimmed = line.trim();
-            
+
             // Detect common comment patterns
-            let is_comment = trimmed.starts_with("//") || 
-                           trimmed.starts_with("#") || 
-                           trimmed.starts_with("/*") ||
-                           trimmed.starts_with("*") ||
-                           trimmed.starts_with("\"\"\"") ||
-                           trimmed.starts_with("'''");
+            let is_comment = trimmed.starts_with("//")
+                || trimmed.starts_with('#')
+                || trimmed.starts_with("/*")
+                || trimmed.starts_with('*')
+                || trimmed.starts_with("\"\"\"")
+                || trimmed.starts_with("'''");
 
             if is_comment {
                 for mat in regex.find_iter(line) {
@@ -1301,7 +1400,7 @@ impl BullshitAnalyzer {
                         rule_id: rule.id.clone(),
                         rule_name: rule.name.clone(),
                         description: rule.description.clone(),
-                        severity: rule.severity.clone(),
+                        severity: rule.severity,
                         file_path: file_info.path.to_string_lossy().to_string(),
                         line_number: line_num + 1,
                         column_number: mat.start() + 1,
@@ -1334,14 +1433,14 @@ impl BullshitAnalyzer {
             if symbol.kind == "function" || symbol.kind == "method" {
                 // Check the signature line (usually the first line of the symbol)
                 let signature_line_num = symbol.start_line.saturating_sub(1);
-                
+
                 if let Some(line) = lines.get(signature_line_num) {
                     for mat in regex.find_iter(line) {
                         detections.push(BullshitDetection {
                             rule_id: rule.id.clone(),
                             rule_name: rule.name.clone(),
                             description: rule.description.clone(),
-                            severity: rule.severity.clone(),
+                            severity: rule.severity,
                             file_path: file_info.path.to_string_lossy().to_string(),
                             line_number: signature_line_num + 1,
                             column_number: mat.start() + 1,
@@ -1360,6 +1459,7 @@ impl BullshitAnalyzer {
     }
 
     /// Gets AI-powered insights about the analysis results.
+    #[must_use]
     pub fn get_ai_insights(&self, analysis_result: &AnalysisResult) -> AIAnalysisResult {
         self.ai_analyzer.analyze(analysis_result)
     }
@@ -1380,12 +1480,12 @@ mod tests {
     #[test]
     fn test_language_detection() {
         let analyzer = BullshitAnalyzer::new().unwrap();
-        
+
         // Test Rust file
         let rust_path = std::path::Path::new("test.rs");
         let language = analyzer.detect_language(rust_path).unwrap();
         assert_eq!(language, Some(SupportedLanguage::Rust));
-        
+
         // Test Python file
         let python_path = std::path::Path::new("test.py");
         let language = analyzer.detect_language(python_path).unwrap();
@@ -1395,10 +1495,10 @@ mod tests {
     #[test]
     fn test_bullshit_detection() {
         let mut analyzer = BullshitAnalyzer::new().unwrap();
-        
+
         // Create a temporary Rust file with bullshit patterns
         let mut temp_file = NamedTempFile::new().unwrap();
-        let rust_code = r#"
+        let rust_code = r"
 fn incomplete_function() {
     // TODO: implement this function
     unimplemented!()
@@ -1408,15 +1508,15 @@ fn another_function() {
     let result = some_operation();
     result.unwrap(); // This should be handled better
 }
-"#;
-        
-        write!(temp_file, "{}", rust_code).unwrap();
+";
+
+        write!(temp_file, "{rust_code}").unwrap();
         let temp_path = temp_file.path();
-        
+
         // For this test, we'll simulate the analysis since we need actual file processing
         // In a real scenario, this would use the CodebaseAnalyzer
         let detections = analyzer.analyze_file(temp_path);
-        
+
         // Note: This test may fail in CI/testing environments due to file system dependencies
         // In a real implementation, we would mock the CodebaseAnalyzer or use integration tests
         match detections {
@@ -1426,7 +1526,7 @@ fn another_function() {
             }
             Err(e) => {
                 // Expected in testing environment without proper file setup
-                println!("Analysis failed (expected in test environment): {}", e);
+                println!("Analysis failed (expected in test environment): {e}");
             }
         }
     }

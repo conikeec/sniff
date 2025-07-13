@@ -6,7 +6,7 @@
 //! This module provides a high-performance embedded database for storing
 //! Merkle tree nodes, session metadata, and search indices.
 
-use crate::error::{SniffError, Result};
+use crate::error::{Result, SniffError};
 use crate::hash::Blake3Hash;
 use crate::tree::MerkleNode;
 use crate::types::SessionId;
@@ -17,7 +17,6 @@ use std::path::PathBuf;
 use tracing::{debug, info};
 
 /// Table definitions for the redb database.
-
 /// Main table storing Merkle tree nodes keyed by their hash.
 const NODES_TABLE: TableDefinition<&[u8], &[u8]> = TableDefinition::new("nodes");
 
@@ -119,37 +118,37 @@ impl CacheStats {
 fn extract_snippet(text: &str, query: &str, max_length: usize) -> String {
     let text_lower = text.to_lowercase();
     let query_lower = query.to_lowercase();
-    
+
     if let Some(match_pos) = text_lower.find(&query_lower) {
         let start = match_pos.saturating_sub(max_length / 2);
         let end = (match_pos + query.len() + max_length / 2).min(text.len());
-        
+
         // Find character boundaries to avoid UTF-8 issues
-        let char_start = text.char_indices()
+        let char_start = text
+            .char_indices()
             .find(|(idx, _)| *idx >= start)
-            .map(|(idx, _)| idx)
-            .unwrap_or(0);
-        let char_end = text.char_indices()
+            .map_or(0, |(idx, _)| idx);
+        let char_end = text
+            .char_indices()
             .find(|(idx, _)| *idx >= end)
-            .map(|(idx, _)| idx)
-            .unwrap_or(text.len());
-        
+            .map_or(text.len(), |(idx, _)| idx);
+
         let mut snippet = text[char_start..char_end].to_string();
-        
+
         // Add ellipsis if we truncated
         if char_start > 0 {
-            snippet = format!("...{}", snippet);
+            snippet = format!("...{snippet}");
         }
         if char_end < text.len() {
-            snippet = format!("{}...", snippet);
+            snippet = format!("{snippet}...");
         }
-        
+
         snippet
     } else {
         // Fallback: just take the beginning of the text
         if text.chars().count() > max_length {
             let truncated: String = text.chars().take(max_length).collect();
-            format!("{}...", truncated)
+            format!("{truncated}...")
         } else {
             text.to_string()
         }
@@ -168,15 +167,12 @@ impl TreeStorage {
         // Ensure parent directory exists
         if let Some(parent) = config.db_path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
-                SniffError::storage_error(format!(
-                    "Failed to create database directory: {e}"
-                ))
+                SniffError::storage_error(format!("Failed to create database directory: {e}"))
             })?;
         }
 
-        let db = Database::create(&config.db_path).map_err(|e| {
-            SniffError::storage_error(format!("Failed to open database: {e}"))
-        })?;
+        let db = Database::create(&config.db_path)
+            .map_err(|e| SniffError::storage_error(format!("Failed to open database: {e}")))?;
 
         let mut storage = Self {
             db,
@@ -204,9 +200,9 @@ impl TreeStorage {
         })?;
 
         // Create all tables
-        write_txn.open_table(NODES_TABLE).map_err(|e| {
-            SniffError::storage_error(format!("Failed to create nodes table: {e}"))
-        })?;
+        write_txn
+            .open_table(NODES_TABLE)
+            .map_err(|e| SniffError::storage_error(format!("Failed to create nodes table: {e}")))?;
 
         write_txn.open_table(SESSION_INDEX).map_err(|e| {
             SniffError::storage_error(format!("Failed to create session index: {e}"))
@@ -250,9 +246,8 @@ impl TreeStorage {
                 SniffError::storage_error(format!("Failed to serialize node: {e}"))
             })?)?
         } else {
-            bincode::serialize(node).map_err(|e| {
-                SniffError::storage_error(format!("Failed to serialize node: {e}"))
-            })?
+            bincode::serialize(node)
+                .map_err(|e| SniffError::storage_error(format!("Failed to serialize node: {e}")))?
         };
 
         let write_txn = self.db.begin_write().map_err(|e| {
@@ -266,9 +261,7 @@ impl TreeStorage {
 
             table
                 .insert(node.hash.as_slice(), node_bytes.as_slice())
-                .map_err(|e| {
-                    SniffError::storage_error(format!("Failed to insert node: {e}"))
-                })?;
+                .map_err(|e| SniffError::storage_error(format!("Failed to insert node: {e}")))?;
         }
 
         // Update parent-child relationships
@@ -304,13 +297,14 @@ impl TreeStorage {
             SniffError::storage_error(format!("Failed to begin read transaction: {e}"))
         })?;
 
-        let table = read_txn.open_table(NODES_TABLE).map_err(|e| {
-            SniffError::storage_error(format!("Failed to open nodes table: {e}"))
-        })?;
+        let table = read_txn
+            .open_table(NODES_TABLE)
+            .map_err(|e| SniffError::storage_error(format!("Failed to open nodes table: {e}")))?;
 
-        let node_bytes = match table.get(hash.as_slice()).map_err(|e| {
-            SniffError::storage_error(format!("Failed to get node: {e}"))
-        })? {
+        let node_bytes = match table
+            .get(hash.as_slice())
+            .map_err(|e| SniffError::storage_error(format!("Failed to get node: {e}")))?
+        {
             Some(bytes) => bytes.value().to_vec(),
             None => return Ok(None),
         };
@@ -321,9 +315,8 @@ impl TreeStorage {
             node_bytes
         };
 
-        let node: MerkleNode = bincode::deserialize(&decompressed).map_err(|e| {
-            SniffError::storage_error(format!("Failed to deserialize node: {e}"))
-        })?;
+        let node: MerkleNode = bincode::deserialize(&decompressed)
+            .map_err(|e| SniffError::storage_error(format!("Failed to deserialize node: {e}")))?;
 
         // Update cache
         self.node_cache.insert(*hash, node.clone());
@@ -350,9 +343,7 @@ impl TreeStorage {
 
             table
                 .insert(session_id.as_str(), root_hash.as_slice())
-                .map_err(|e| {
-                    SniffError::storage_error(format!("Failed to index session: {e}"))
-                })?;
+                .map_err(|e| SniffError::storage_error(format!("Failed to index session: {e}")))?;
         }
 
         write_txn.commit().map_err(|e| {
@@ -373,13 +364,14 @@ impl TreeStorage {
             SniffError::storage_error(format!("Failed to begin read transaction: {e}"))
         })?;
 
-        let table = read_txn.open_table(SESSION_INDEX).map_err(|e| {
-            SniffError::storage_error(format!("Failed to open session index: {e}"))
-        })?;
+        let table = read_txn
+            .open_table(SESSION_INDEX)
+            .map_err(|e| SniffError::storage_error(format!("Failed to open session index: {e}")))?;
 
-        match table.get(session_id.as_str()).map_err(|e| {
-            SniffError::storage_error(format!("Failed to get session root: {e}"))
-        })? {
+        match table
+            .get(session_id.as_str())
+            .map_err(|e| SniffError::storage_error(format!("Failed to get session root: {e}")))?
+        {
             Some(hash_bytes) => {
                 let mut hash_array = [0u8; 32];
                 hash_array.copy_from_slice(hash_bytes.value());
@@ -399,14 +391,14 @@ impl TreeStorage {
             SniffError::storage_error(format!("Failed to begin read transaction: {e}"))
         })?;
 
-        let table = read_txn.open_table(SESSION_INDEX).map_err(|e| {
-            SniffError::storage_error(format!("Failed to open session index: {e}"))
-        })?;
+        let table = read_txn
+            .open_table(SESSION_INDEX)
+            .map_err(|e| SniffError::storage_error(format!("Failed to open session index: {e}")))?;
 
         let mut sessions = Vec::new();
-        let mut iter = table.iter().map_err(|e| {
-            SniffError::storage_error(format!("Failed to iterate sessions: {e}"))
-        })?;
+        let mut iter = table
+            .iter()
+            .map_err(|e| SniffError::storage_error(format!("Failed to iterate sessions: {e}")))?;
 
         while let Some(Ok((key, _))) = iter.next() {
             sessions.push(key.value().to_string());
@@ -426,28 +418,31 @@ impl TreeStorage {
         })?;
 
         // Count nodes
-        let nodes_table = read_txn.open_table(NODES_TABLE).map_err(|e| {
-            SniffError::storage_error(format!("Failed to open nodes table: {e}"))
-        })?;
-        let total_nodes = nodes_table.len().map_err(|e| {
-            SniffError::storage_error(format!("Failed to count nodes: {e}"))
-        })? as usize;
+        let nodes_table = read_txn
+            .open_table(NODES_TABLE)
+            .map_err(|e| SniffError::storage_error(format!("Failed to open nodes table: {e}")))?;
+        let total_nodes = nodes_table
+            .len()
+            .map_err(|e| SniffError::storage_error(format!("Failed to count nodes: {e}")))?
+            as usize;
 
         // Count sessions
-        let session_table = read_txn.open_table(SESSION_INDEX).map_err(|e| {
-            SniffError::storage_error(format!("Failed to open session index: {e}"))
-        })?;
-        let total_sessions = session_table.len().map_err(|e| {
-            SniffError::storage_error(format!("Failed to count sessions: {e}"))
-        })? as usize;
+        let session_table = read_txn
+            .open_table(SESSION_INDEX)
+            .map_err(|e| SniffError::storage_error(format!("Failed to open session index: {e}")))?;
+        let total_sessions = session_table
+            .len()
+            .map_err(|e| SniffError::storage_error(format!("Failed to count sessions: {e}")))?
+            as usize;
 
         // Count projects
-        let project_table = read_txn.open_table(PROJECT_INDEX).map_err(|e| {
-            SniffError::storage_error(format!("Failed to open project index: {e}"))
-        })?;
-        let total_projects = project_table.len().map_err(|e| {
-            SniffError::storage_error(format!("Failed to count projects: {e}"))
-        })? as usize;
+        let project_table = read_txn
+            .open_table(PROJECT_INDEX)
+            .map_err(|e| SniffError::storage_error(format!("Failed to open project index: {e}")))?;
+        let total_projects = project_table
+            .len()
+            .map_err(|e| SniffError::storage_error(format!("Failed to count projects: {e}")))?
+            as usize;
 
         // Get file size
         let file_size_bytes = std::fs::metadata(&self.config.db_path)
@@ -471,10 +466,10 @@ impl TreeStorage {
     /// Returns an error if compaction fails.
     pub fn compact(&mut self) -> Result<()> {
         info!("Starting database compaction");
-        
-        self.db.compact().map_err(|e| {
-            SniffError::storage_error(format!("Failed to compact database: {e}"))
-        })?;
+
+        self.db
+            .compact()
+            .map_err(|e| SniffError::storage_error(format!("Failed to compact database: {e}")))?;
 
         // Update compaction timestamp
         let now = chrono::Utc::now();
@@ -498,72 +493,90 @@ impl TreeStorage {
         if query.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         let query_lower = query.to_lowercase();
         let mut results = Vec::new();
-        
+
         let read_txn = self.db.begin_read().map_err(|e| {
             SniffError::storage_error(format!("Failed to begin read transaction: {e}"))
         })?;
-        
+
         // Get all sessions
-        let session_table = read_txn.open_table(SESSION_INDEX).map_err(|e| {
-            SniffError::storage_error(format!("Failed to open session index: {e}"))
-        })?;
-        
-        let node_table = read_txn.open_table(NODES_TABLE).map_err(|e| {
-            SniffError::storage_error(format!("Failed to open node table: {e}"))
-        })?;
-        
+        let session_table = read_txn
+            .open_table(SESSION_INDEX)
+            .map_err(|e| SniffError::storage_error(format!("Failed to open session index: {e}")))?;
+
+        let node_table = read_txn
+            .open_table(NODES_TABLE)
+            .map_err(|e| SniffError::storage_error(format!("Failed to open node table: {e}")))?;
+
         // Search through each session
         let mut _sessions_checked = 0;
         let mut _nodes_checked = 0;
         let mut _messages_with_content = 0;
         let mut _content_chunks_checked = 0;
-        
-        for item in session_table.iter().map_err(|e| SniffError::storage_error(format!("Failed to iterate sessions: {e}")))? {
-            let (k, v) = item.map_err(|e| SniffError::storage_error(format!("Failed to read session entry: {e}")))?;
+
+        for item in session_table
+            .iter()
+            .map_err(|e| SniffError::storage_error(format!("Failed to iterate sessions: {e}")))?
+        {
+            let (k, v) = item.map_err(|e| {
+                SniffError::storage_error(format!("Failed to read session entry: {e}"))
+            })?;
             let session_id = k.value().to_string();
             let hash_bytes = v.value();
             _sessions_checked += 1;
-            
+
             if hash_bytes.len() != 32 {
                 continue; // Skip invalid hashes
             }
-            
+
             let mut hash_array = [0u8; 32];
             hash_array.copy_from_slice(hash_bytes);
             let _session_hash = crate::hash::Blake3Hash::new(hash_array);
-            
+
             let mut matching_snippets = Vec::new();
-            
+
             // Get the session node data directly from the table
             if let Some(session_data) = node_table.get(hash_bytes).map_err(|e| {
                 SniffError::storage_error(format!("Failed to read session node: {e}"))
             })? {
                 // Deserialize the session node
-                if let Ok(session_node) = bincode::deserialize::<crate::tree::MerkleNode>(session_data.value()) {
+                if let Ok(session_node) =
+                    bincode::deserialize::<crate::tree::MerkleNode>(session_data.value())
+                {
                     // Search through all child nodes (messages)
-                    for (_child_key, child_hash) in &session_node.children {
+                    for child_hash in session_node.children.values() {
                         _nodes_checked += 1;
-                        if let Some(message_data) = node_table.get(child_hash.as_bytes() as &[u8]).map_err(|e| {
+                        if let Some(message_data) = node_table
+                            .get(child_hash.as_bytes() as &[u8])
+                            .map_err(|e| {
                             SniffError::storage_error(format!("Failed to read message node: {e}"))
                         })? {
-                            if let Ok(message_node) = bincode::deserialize::<crate::tree::MerkleNode>(message_data.value()) {
+                            if let Ok(message_node) = bincode::deserialize::<crate::tree::MerkleNode>(
+                                message_data.value(),
+                            ) {
                                 // Check if this is a message node and has content
-                                if matches!(message_node.node_type, crate::tree::NodeType::Message { .. }) {
+                                if matches!(
+                                    message_node.node_type,
+                                    crate::tree::NodeType::Message { .. }
+                                ) {
                                     if let Some(ref content_data) = message_node.content {
                                         _messages_with_content += 1;
                                         // Parse the content as a ClaudeMessage and extract text
-                                        match serde_json::from_slice::<crate::types::ClaudeMessage>(content_data) {
+                                        match serde_json::from_slice::<crate::types::ClaudeMessage>(
+                                            content_data,
+                                        ) {
                                             Ok(message) => {
-                                                let text_content = message.extract_all_text_content();
-                                                
+                                                let text_content =
+                                                    message.extract_all_text_content();
+
                                                 for text in text_content {
                                                     _content_chunks_checked += 1;
                                                     if text.to_lowercase().contains(&query_lower) {
                                                         // Extract a snippet around the match
-                                                        let snippet = extract_snippet(&text, query, 100);
+                                                        let snippet =
+                                                            extract_snippet(&text, query, 100);
                                                         matching_snippets.push(snippet);
                                                     }
                                                 }
@@ -579,24 +592,23 @@ impl TreeStorage {
                     }
                 }
             }
-            
+
             if !matching_snippets.is_empty() {
                 results.push((session_id, matching_snippets));
-                
+
                 if results.len() >= limit {
                     break;
                 }
             }
         }
-        
+
         Ok(results)
     }
 
     /// Stores metadata in the database.
     fn store_metadata<T: Serialize>(&self, key: &str, value: &T) -> Result<()> {
-        let value_bytes = bincode::serialize(value).map_err(|e| {
-            SniffError::storage_error(format!("Failed to serialize metadata: {e}"))
-        })?;
+        let value_bytes = bincode::serialize(value)
+            .map_err(|e| SniffError::storage_error(format!("Failed to serialize metadata: {e}")))?;
 
         let write_txn = self.db.begin_write().map_err(|e| {
             SniffError::storage_error(format!("Failed to begin write transaction: {e}"))
@@ -607,14 +619,14 @@ impl TreeStorage {
                 SniffError::storage_error(format!("Failed to open metadata table: {e}"))
             })?;
 
-            table.insert(key, value_bytes.as_slice()).map_err(|e| {
-                SniffError::storage_error(format!("Failed to store metadata: {e}"))
-            })?;
+            table
+                .insert(key, value_bytes.as_slice())
+                .map_err(|e| SniffError::storage_error(format!("Failed to store metadata: {e}")))?;
         }
 
-        write_txn.commit().map_err(|e| {
-            SniffError::storage_error(format!("Failed to commit metadata: {e}"))
-        })?;
+        write_txn
+            .commit()
+            .map_err(|e| SniffError::storage_error(format!("Failed to commit metadata: {e}")))?;
 
         Ok(())
     }
@@ -630,9 +642,8 @@ impl TreeStorage {
         })?;
 
         // Store children for this node
-        let children_data = bincode::serialize(&node.children).map_err(|e| {
-            SniffError::storage_error(format!("Failed to serialize children: {e}"))
-        })?;
+        let children_data = bincode::serialize(&node.children)
+            .map_err(|e| SniffError::storage_error(format!("Failed to serialize children: {e}")))?;
 
         table
             .insert(node.hash.as_slice(), children_data.as_slice())
@@ -658,14 +669,14 @@ impl TreeStorage {
     /// Evicts cache entries if the cache is too large.
     fn evict_cache_if_needed(&mut self) {
         const MAX_CACHE_ENTRIES: usize = 1000; // Simple LRU would be better
-        
+
         if self.node_cache.len() > MAX_CACHE_ENTRIES {
             // Simple eviction: remove random entries
             let keys_to_remove: Vec<_> = self
                 .node_cache
                 .keys()
                 .take(self.node_cache.len() - MAX_CACHE_ENTRIES / 2)
-                .cloned()
+                .copied()
                 .collect();
 
             for key in keys_to_remove {
@@ -712,9 +723,10 @@ impl<'a> BatchWriter<'a> {
     ///
     /// Returns an error if the batch cannot be committed.
     pub fn commit(self) -> Result<()> {
-        let write_txn = self.storage.db.begin_write().map_err(|e| {
-            SniffError::storage_error(format!("Failed to begin batch write: {e}"))
-        })?;
+        let write_txn =
+            self.storage.db.begin_write().map_err(|e| {
+                SniffError::storage_error(format!("Failed to begin batch write: {e}"))
+            })?;
 
         // Store all nodes
         {
@@ -750,9 +762,9 @@ impl<'a> BatchWriter<'a> {
             }
         }
 
-        write_txn.commit().map_err(|e| {
-            SniffError::storage_error(format!("Failed to commit batch: {e}"))
-        })?;
+        write_txn
+            .commit()
+            .map_err(|e| SniffError::storage_error(format!("Failed to commit batch: {e}")))?;
 
         // Update cache with new nodes
         for node in self.nodes {
@@ -760,8 +772,10 @@ impl<'a> BatchWriter<'a> {
         }
         self.storage.evict_cache_if_needed();
 
-        info!("Committed batch with {} operations", 
-              self.session_indices.len() + self.project_indices.len());
+        info!(
+            "Committed batch with {} operations",
+            self.session_indices.len() + self.project_indices.len()
+        );
         Ok(())
     }
 }
@@ -775,12 +789,12 @@ mod tests {
     fn create_test_storage() -> (TreeStorage, TempDir) {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test.redb");
-        
+
         let config = StorageConfig {
             db_path,
             ..Default::default()
         };
-        
+
         let storage = TreeStorage::open(config).unwrap();
         (storage, temp_dir)
     }
@@ -793,7 +807,8 @@ mod tests {
             std::collections::BTreeMap::new(),
             None,
             None,
-        ).unwrap()
+        )
+        .unwrap()
     }
 
     fn create_test_node_with_content(content: &[u8]) -> MerkleNode {
@@ -804,7 +819,8 @@ mod tests {
             std::collections::BTreeMap::new(),
             None,
             Some(content.to_vec()),
-        ).unwrap()
+        )
+        .unwrap()
     }
 
     #[test]
@@ -821,7 +837,7 @@ mod tests {
 
         storage.store_node(&node).unwrap();
         let retrieved = storage.get_node(&hash).unwrap();
-        
+
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().hash, hash);
     }
@@ -831,10 +847,10 @@ mod tests {
         let (mut storage, _temp_dir) = create_test_storage();
         let node = create_test_node();
         let session_id = "test-session".to_string();
-        
+
         storage.store_node(&node).unwrap();
         storage.index_session(&session_id, &node.hash).unwrap();
-        
+
         let root_hash = storage.get_session_root(&session_id).unwrap();
         assert_eq!(root_hash, Some(node.hash));
     }
@@ -848,11 +864,11 @@ mod tests {
         // First retrieval should miss cache
         storage.store_node(&node).unwrap();
         let stats_before = storage.cache_stats().clone();
-        
+
         // Second retrieval should hit cache
         storage.get_node(&hash).unwrap();
         storage.get_node(&hash).unwrap();
-        
+
         let stats_after = storage.cache_stats();
         assert!(stats_after.hits > stats_before.hits);
     }
@@ -861,10 +877,12 @@ mod tests {
     fn test_database_stats() {
         let (mut storage, _temp_dir) = create_test_storage();
         let node = create_test_node();
-        
+
         storage.store_node(&node).unwrap();
-        storage.index_session(&"test-session".to_string(), &node.hash).unwrap();
-        
+        storage
+            .index_session(&"test-session".to_string(), &node.hash)
+            .unwrap();
+
         let stats = storage.get_stats().unwrap();
         assert_eq!(stats.total_nodes, 1);
         assert_eq!(stats.total_sessions, 1);
@@ -875,15 +893,15 @@ mod tests {
         let (mut storage, _temp_dir) = create_test_storage();
         let node1 = create_test_node_with_content(b"content1");
         let node2 = create_test_node_with_content(b"content2");
-        
+
         let mut batch = BatchWriter::new(&mut storage);
         batch.add_node(node1.clone());
         batch.add_node(node2.clone());
         batch.add_session_index("session1".to_string(), node1.hash);
         batch.add_session_index("session2".to_string(), node2.hash);
-        
+
         batch.commit().unwrap();
-        
+
         let stats = storage.get_stats().unwrap();
         assert_eq!(stats.total_nodes, 2);
         assert_eq!(stats.total_sessions, 2);

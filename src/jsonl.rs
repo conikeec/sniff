@@ -6,7 +6,7 @@
 //! This module provides robust parsing of Claude Code JSONL session files,
 //! with comprehensive error handling and validation.
 
-use crate::error::{SniffError, Result};
+use crate::error::{Result, SniffError};
 use crate::types::{ClaudeMessage, SessionId};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -66,6 +66,7 @@ impl Default for JsonlParser {
 
 impl JsonlParser {
     /// Creates a new JSONL parser with default configuration.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             validate_consistency: true,
@@ -74,6 +75,7 @@ impl JsonlParser {
     }
 
     /// Creates a new JSONL parser with custom configuration.
+    #[must_use]
     pub fn with_config(config: ParseConfig) -> Self {
         Self {
             validate_consistency: config.validate_consistency,
@@ -132,10 +134,7 @@ impl JsonlParser {
                         if let Some(ref existing_session) = session_id {
                             if msg_session_id != existing_session {
                                 warnings.push(format!(
-                                    "Session ID mismatch at line {}: expected '{}', found '{}'",
-                                    line_num,
-                                    existing_session,
-                                    msg_session_id
+                                    "Session ID mismatch at line {line_num}: expected '{existing_session}', found '{msg_session_id}'"
                                 ));
                             }
                         } else {
@@ -215,9 +214,7 @@ impl JsonlParser {
                 if !uuid_set.contains(parent_uuid) {
                     if let Some(msg_uuid) = message.uuid() {
                         warnings.push(format!(
-                            "Message {} references non-existent parent: {}",
-                            msg_uuid,
-                            parent_uuid
+                            "Message {msg_uuid} references non-existent parent: {parent_uuid}"
                         ));
                     }
                 }
@@ -251,7 +248,9 @@ impl JsonlParser {
 
 /// Utility functions for working with JSONL files.
 pub mod utils {
-    use super::*;
+    use super::{
+        BufRead, BufReader, ClaudeMessage, File, JsonlParser, Path, Result, SessionId, SniffError,
+    };
     use std::fs;
 
     /// Counts the number of lines in a JSONL file.
@@ -284,8 +283,8 @@ pub mod utils {
     ///
     /// Returns an error if the file cannot be read or doesn't contain valid messages.
     pub fn extract_session_id(path: impl AsRef<Path>) -> Result<Option<SessionId>> {
-        let file = File::open(path.as_ref())
-            .map_err(|e| SniffError::file_system(path.as_ref(), e))?;
+        let file =
+            File::open(path.as_ref()).map_err(|e| SniffError::file_system(path.as_ref(), e))?;
 
         let reader = BufReader::new(file);
 

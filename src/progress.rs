@@ -9,8 +9,8 @@
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 use std::thread;
+use std::time::{Duration, Instant};
 
 /// A progress indicator that shows spinning animation with fun messages.
 pub struct ProgressIndicator {
@@ -29,7 +29,7 @@ impl ProgressMessages {
     /// Messages for scanning operations.
     pub const SCANNING: &'static [&'static str] = &[
         "🔍 Analyzing your Claude conversations...",
-        "📚 Reading through your session histories...", 
+        "📚 Reading through your session histories...",
         "🧠 Extracting thinking patterns...",
         "⚡ Building knowledge trees...",
         "🔧 Categorizing tool operations...",
@@ -61,80 +61,88 @@ impl ProgressMessages {
 
 impl ProgressIndicator {
     /// Creates a new progress indicator with the given operation type.
+    #[must_use]
     pub fn new(operation: &str) -> Self {
         let running = Arc::new(AtomicBool::new(true));
         let running_clone = running.clone();
         let operation = operation.to_string();
-        
+
         let handle = thread::spawn(move || {
             let messages = match operation.as_str() {
                 "scan" => ProgressMessages::SCANNING,
                 "database" => ProgressMessages::DATABASE,
                 _ => ProgressMessages::SCANNING,
             };
-            
+
             let spinners = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
             let mut spinner_idx = 0;
             let mut message_idx = 0;
             let mut last_message_change = Instant::now();
-            
+
             while running_clone.load(Ordering::Relaxed) {
                 // Change message every 3 seconds
                 if last_message_change.elapsed() >= Duration::from_secs(3) {
                     message_idx = (message_idx + 1) % messages.len();
                     last_message_change = Instant::now();
                 }
-                
+
                 print!("\r{} {}", spinners[spinner_idx], messages[message_idx]);
                 io::stdout().flush().unwrap_or(());
-                
+
                 spinner_idx = (spinner_idx + 1) % spinners.len();
                 thread::sleep(Duration::from_millis(100));
             }
-            
+
             // Clear the line when done
             print!("\r{:50}\r", "");
             io::stdout().flush().unwrap_or(());
         });
-        
+
         Self {
             running,
             handle: Some(handle),
             start_time: Instant::now(),
         }
     }
-    
+
     /// Updates the progress with a specific message.
     pub fn update(&self, message: &str) {
         print!("\r⚡ {}{:30}\r", message, "");
         io::stdout().flush().unwrap_or(());
     }
-    
+
     /// Stops the progress indicator and shows completion message.
     pub fn finish(mut self, success_message: Option<&str>) {
         self.running.store(false, Ordering::Relaxed);
-        
+
         if let Some(handle) = self.handle.take() {
             handle.join().unwrap_or(());
         }
-        
+
         let duration = self.start_time.elapsed();
-        let completion_msg = success_message
-            .unwrap_or(ProgressMessages::COMPLETION[0]);
-            
-        println!("{} (completed in {:.2}s)", completion_msg, duration.as_secs_f64());
+        let completion_msg = success_message.unwrap_or(ProgressMessages::COMPLETION[0]);
+
+        println!(
+            "{} (completed in {:.2}s)",
+            completion_msg,
+            duration.as_secs_f64()
+        );
     }
-    
+
     /// Stops the progress indicator and shows an error message.
     pub fn finish_with_error(mut self, error_message: &str) {
         self.running.store(false, Ordering::Relaxed);
-        
+
         if let Some(handle) = self.handle.take() {
             handle.join().unwrap_or(());
         }
-        
+
         let duration = self.start_time.elapsed();
-        println!("❌ {} (failed after {:.2}s)", error_message, duration.as_secs_f64());
+        println!(
+            "❌ {} (failed after {:.2}s)",
+            error_message,
+            duration.as_secs_f64()
+        );
     }
 }
 
@@ -159,6 +167,7 @@ pub struct ProgressBar {
 
 impl ProgressBar {
     /// Creates a new progress bar.
+    #[must_use]
     pub fn new(total: usize) -> Self {
         Self {
             total,
@@ -166,7 +175,7 @@ impl ProgressBar {
             start_time: Instant::now(),
         }
     }
-    
+
     /// Updates the progress bar with current completion count.
     pub fn update(&mut self, completed: usize, current_item: &str) {
         self.completed = completed;
@@ -175,47 +184,53 @@ impl ProgressBar {
         } else {
             0
         };
-        
+
         let bar_width = 30;
         let filled = (percentage as usize * bar_width) / 100;
         let bar = "█".repeat(filled) + &"░".repeat(bar_width - filled);
-        
-        print!("\r[{}] {}% ({}/{}) - {}", 
-               bar, percentage, completed, self.total, current_item);
+
+        print!(
+            "\r[{}] {}% ({}/{}) - {}",
+            bar, percentage, completed, self.total, current_item
+        );
         io::stdout().flush().unwrap_or(());
     }
-    
+
     /// Finishes the progress bar with a completion message.
     pub fn finish(&self, message: &str) {
         let duration = self.start_time.elapsed();
-        println!("\n✅ {} (processed {} items in {:.2}s)", 
-                message, self.completed, duration.as_secs_f64());
+        println!(
+            "\n✅ {} (processed {} items in {:.2}s)",
+            message,
+            self.completed,
+            duration.as_secs_f64()
+        );
     }
 }
 
 /// Shows a simple status message.
 pub fn show_status(message: &str) {
-    println!("📋 {}", message);
+    println!("📋 {message}");
 }
 
 /// Shows a success message.
 pub fn show_success(message: &str) {
-    println!("✅ {}", message);
+    println!("✅ {message}");
 }
 
 /// Shows an error message.
 pub fn show_error(message: &str) {
-    println!("❌ {}", message);
+    println!("❌ {message}");
 }
 
 /// Shows a warning message.
 pub fn show_warning(message: &str) {
-    println!("⚠️  {}", message);
+    println!("⚠️  {message}");
 }
 
 /// Shows an info message.
 pub fn show_info(message: &str) {
-    println!("ℹ️  {}", message);
+    println!("ℹ️  {message}");
 }
 
 #[cfg(test)]
@@ -227,10 +242,10 @@ mod tests {
     fn test_progress_indicator_creation() {
         let progress = ProgressIndicator::new("scan");
         assert!(progress.running.load(Ordering::Relaxed));
-        
+
         // Let it run briefly to test the spinner
         thread::sleep(Duration::from_millis(200));
-        
+
         progress.finish(Some("Test completed"));
     }
 

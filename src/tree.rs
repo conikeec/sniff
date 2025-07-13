@@ -6,7 +6,10 @@
 //! This module provides a hierarchical Merkle tree structure for organizing
 //! and verifying Claude Code session data with cryptographic integrity.
 
-use crate::error::{SniffError, Result};
+#![allow(clippy::bool_to_int_with_if)]
+#![allow(clippy::implicit_hasher)]
+
+use crate::error::{Result, SniffError};
 use crate::hash::Blake3Hash;
 use crate::operations::Operation;
 use crate::types::{ClaudeMessage, MessageUuid, SessionId};
@@ -126,7 +129,7 @@ impl MerkleNode {
             parent,
             content,
         };
-        
+
         // Compute the actual hash
         node.hash = node.compute_hash()?;
         Ok(node)
@@ -139,15 +142,16 @@ impl MerkleNode {
     /// Returns an error if the hash cannot be computed.
     pub fn compute_hash(&self) -> Result<Blake3Hash> {
         let mut hasher = blake3::Hasher::new();
-        
+
         // Add domain separator
         hasher.update(b"MERKLE_NODE:");
-        
+
         // Hash node type
-        let node_type_bytes = serde_json::to_vec(&self.node_type)
-            .map_err(|e| SniffError::hash_computation(format!("Failed to serialize node type: {e}")))?;
+        let node_type_bytes = serde_json::to_vec(&self.node_type).map_err(|e| {
+            SniffError::hash_computation(format!("Failed to serialize node type: {e}"))
+        })?;
         hasher.update(&node_type_bytes);
-        
+
         // Hash children in sorted order
         hasher.update(b"CHILDREN:");
         hasher.update(&(self.children.len() as u64).to_le_bytes());
@@ -155,20 +159,20 @@ impl MerkleNode {
             hasher.update(key.as_bytes());
             hasher.update(child_hash.as_bytes());
         }
-        
+
         // Hash content if present
         if let Some(ref content) = self.content {
             hasher.update(b"CONTENT:");
             hasher.update(&(content.len() as u64).to_le_bytes());
             hasher.update(content);
         }
-        
+
         // Hash metadata counts (for structural integrity)
         hasher.update(b"METADATA:");
         hasher.update(&self.metadata.message_count.to_le_bytes());
         hasher.update(&self.metadata.operation_count.to_le_bytes());
         hasher.update(&self.metadata.content_size.to_le_bytes());
-        
+
         Ok(hasher.finalize().into())
     }
 
@@ -294,7 +298,7 @@ impl TreeBuilder {
         operations: &[Operation],
     ) -> Result<MerkleNode> {
         info!("Building session tree for session: {}", session_id);
-        
+
         if messages.is_empty() {
             return Err(SniffError::invalid_session(
                 "Cannot build tree from empty message list",
@@ -302,8 +306,13 @@ impl TreeBuilder {
         }
 
         // Determine session time bounds
-        let start_time = messages.first().and_then(|m| m.timestamp()).unwrap_or(Utc::now());
-        let end_time = messages.last().and_then(|m| m.timestamp());
+        let start_time = messages
+            .first()
+            .and_then(super::types::ClaudeMessage::timestamp)
+            .unwrap_or(Utc::now());
+        let end_time = messages
+            .last()
+            .and_then(super::types::ClaudeMessage::timestamp);
 
         // Build message nodes
         let mut message_children = BTreeMap::new();
@@ -315,10 +324,7 @@ impl TreeBuilder {
                 total_content_size += content.len() as u64;
             }
             if let Some(uuid) = message.uuid() {
-                message_children.insert(
-                    uuid.clone(),
-                    message_node.hash,
-                );
+                message_children.insert(uuid.clone(), message_node.hash);
             }
             self.node_cache.insert(message_node.hash, message_node);
         }
@@ -327,21 +333,18 @@ impl TreeBuilder {
         let mut operation_children = BTreeMap::new();
         for operation in operations {
             let operation_node = self.build_operation_node(operation)?;
-            operation_children.insert(
-                operation.tool_use_id.clone(),
-                operation_node.hash,
-            );
+            operation_children.insert(operation.tool_use_id.clone(), operation_node.hash);
             self.node_cache.insert(operation_node.hash, operation_node);
         }
 
         // Combine all children
         let mut all_children = BTreeMap::new();
-        
+
         // Add message children with prefix
         for (key, hash) in message_children {
             all_children.insert(format!("msg:{key}"), hash);
         }
-        
+
         // Add operation children with prefix
         for (key, hash) in operation_children {
             all_children.insert(format!("op:{key}"), hash);
@@ -382,8 +385,9 @@ impl TreeBuilder {
     fn build_message_node(&self, message: &ClaudeMessage) -> Result<MerkleNode> {
         let content = if self.config.include_content {
             // Use JSON serialization which is compatible with untagged enums
-            let content_bytes = serde_json::to_vec(message)
-                .map_err(|e| SniffError::hash_computation(format!("Failed to serialize message: {e}")))?;
+            let content_bytes = serde_json::to_vec(message).map_err(|e| {
+                SniffError::hash_computation(format!("Failed to serialize message: {e}"))
+            })?;
             Some(content_bytes)
         } else {
             None
@@ -392,7 +396,7 @@ impl TreeBuilder {
         let metadata = NodeMetadata {
             message_count: 1,
             operation_count: 0,
-            content_size: content.as_ref().map_or(0, |c| c.len()) as u64,
+            content_size: content.as_ref().map_or(0, std::vec::Vec::len) as u64,
             ..Default::default()
         };
 
@@ -410,7 +414,7 @@ impl TreeBuilder {
             node_type,
             metadata,
             BTreeMap::new(), // Messages are leaf nodes
-            None, // Parent will be set when added to session
+            None,            // Parent will be set when added to session
             content,
         )
     }
@@ -418,8 +422,9 @@ impl TreeBuilder {
     /// Builds an operation node from an operation.
     fn build_operation_node(&self, operation: &Operation) -> Result<MerkleNode> {
         let content = if self.config.include_content {
-            let content_bytes = serde_json::to_vec(operation)
-                .map_err(|e| SniffError::hash_computation(format!("Failed to serialize operation: {e}")))?;
+            let content_bytes = serde_json::to_vec(operation).map_err(|e| {
+                SniffError::hash_computation(format!("Failed to serialize operation: {e}"))
+            })?;
             Some(content_bytes)
         } else {
             None
@@ -428,7 +433,7 @@ impl TreeBuilder {
         let metadata = NodeMetadata {
             message_count: 0,
             operation_count: 1,
-            content_size: content.as_ref().map_or(0, |c| c.len()) as u64,
+            content_size: content.as_ref().map_or(0, std::vec::Vec::len) as u64,
             ..Default::default()
         };
 
@@ -442,7 +447,7 @@ impl TreeBuilder {
             node_type,
             metadata,
             BTreeMap::new(), // Operations are leaf nodes
-            None, // Parent will be set when added to session
+            None,            // Parent will be set when added to session
             content,
         )
     }
@@ -469,9 +474,7 @@ impl TreeBuilder {
             // Extract session ID from node type
             let session_id = match &session_node.node_type {
                 NodeType::Session { session_id, .. } => session_id.clone(),
-                _ => return Err(SniffError::invalid_session(
-                    "Expected session node type",
-                )),
+                _ => return Err(SniffError::invalid_session("Expected session node type")),
             };
 
             total_messages += session_node.metadata.message_count;
@@ -541,7 +544,7 @@ impl Default for TreeBuilder {
 
 /// Utilities for working with Merkle trees.
 pub mod utils {
-    use super::*;
+    use super::{Blake3Hash, HashMap, MerkleNode, Result, SniffError, TreeStats};
 
     /// Validates the integrity of a Merkle tree node.
     ///
@@ -551,9 +554,10 @@ pub mod utils {
     pub fn validate_node(node: &MerkleNode) -> Result<()> {
         let computed_hash = node.compute_hash()?;
         if computed_hash != node.hash {
-            return Err(SniffError::hash_computation(
-                format!("Node hash mismatch: expected {}, got {}", node.hash, computed_hash),
-            ));
+            return Err(SniffError::hash_computation(format!(
+                "Node hash mismatch: expected {}, got {}",
+                node.hash, computed_hash
+            )));
         }
         Ok(())
     }
@@ -572,6 +576,7 @@ pub mod utils {
     }
 
     /// Finds the path from root to a target hash.
+    #[must_use]
     pub fn find_path_to_hash(
         root: &MerkleNode,
         target_hash: &Blake3Hash,
@@ -621,7 +626,7 @@ mod tests {
     fn create_test_message(uuid: &str, parent_uuid: Option<&str>) -> ClaudeMessage {
         let base = MessageBase {
             uuid: uuid.to_string(),
-            parent_uuid: parent_uuid.map(|s| s.to_string()),
+            parent_uuid: parent_uuid.map(std::string::ToString::to_string),
             is_sidechain: false,
             is_meta: None,
             user_type: "external".to_string(),
@@ -664,14 +669,8 @@ mod tests {
     fn test_node_creation() {
         let metadata = NodeMetadata::default();
         let children = BTreeMap::new();
-        
-        let node = MerkleNode::new(
-            NodeType::Root,
-            metadata,
-            children,
-            None,
-            None,
-        ).unwrap();
+
+        let node = MerkleNode::new(NodeType::Root, metadata, children, None, None).unwrap();
 
         assert!(!node.hash.is_null());
         assert!(node.is_leaf());
@@ -683,22 +682,17 @@ mod tests {
         let metadata = NodeMetadata::default();
         let mut children = BTreeMap::new();
         children.insert("child1".to_string(), Blake3Hash::new([1u8; 32]));
-        
+
         let node1 = MerkleNode::new(
             NodeType::Root,
             metadata.clone(),
             children.clone(),
             None,
             None,
-        ).unwrap();
+        )
+        .unwrap();
 
-        let node2 = MerkleNode::new(
-            NodeType::Root,
-            metadata,
-            children,
-            None,
-            None,
-        ).unwrap();
+        let node2 = MerkleNode::new(NodeType::Root, metadata, children, None, None).unwrap();
 
         assert_eq!(node1.hash, node2.hash);
     }
@@ -707,14 +701,8 @@ mod tests {
     fn test_add_remove_child() {
         let metadata = NodeMetadata::default();
         let children = BTreeMap::new();
-        
-        let mut node = MerkleNode::new(
-            NodeType::Root,
-            metadata,
-            children,
-            None,
-            None,
-        ).unwrap();
+
+        let mut node = MerkleNode::new(NodeType::Root, metadata, children, None, None).unwrap();
 
         let original_hash = node.hash;
         let child_hash = Blake3Hash::new([1u8; 32]);
@@ -731,22 +719,17 @@ mod tests {
     #[test]
     fn test_tree_builder_session() {
         let mut builder = TreeBuilder::new();
-        
+
         let messages = vec![
             create_test_message("msg1", None),
             create_test_message("msg2", Some("msg1")),
         ];
-        
-        let operations = vec![
-            create_test_operation("op1"),
-            create_test_operation("op2"),
-        ];
 
-        let session_node = builder.build_session_tree(
-            "test-session".to_string(),
-            &messages,
-            &operations,
-        ).unwrap();
+        let operations = vec![create_test_operation("op1"), create_test_operation("op2")];
+
+        let session_node = builder
+            .build_session_tree("test-session".to_string(), &messages, &operations)
+            .unwrap();
 
         assert!(!session_node.hash.is_null());
         assert_eq!(session_node.metadata.message_count, 2);
@@ -757,21 +740,21 @@ mod tests {
     #[test]
     fn test_tree_builder_project() {
         let mut builder = TreeBuilder::new();
-        
+
         let messages = vec![create_test_message("msg1", None)];
         let operations = vec![create_test_operation("op1")];
 
-        let session_node = builder.build_session_tree(
-            "session1".to_string(),
-            &messages,
-            &operations,
-        ).unwrap();
+        let session_node = builder
+            .build_session_tree("session1".to_string(), &messages, &operations)
+            .unwrap();
 
-        let project_node = builder.build_project_tree(
-            "test-project".to_string(),
-            PathBuf::from("/test/project"),
-            vec![session_node],
-        ).unwrap();
+        let project_node = builder
+            .build_project_tree(
+                "test-project".to_string(),
+                PathBuf::from("/test/project"),
+                vec![session_node],
+            )
+            .unwrap();
 
         assert!(!project_node.hash.is_null());
         assert_eq!(project_node.metadata.message_count, 1);
@@ -783,14 +766,8 @@ mod tests {
     fn test_utils_validate_node() {
         let metadata = NodeMetadata::default();
         let children = BTreeMap::new();
-        
-        let node = MerkleNode::new(
-            NodeType::Root,
-            metadata,
-            children,
-            None,
-            None,
-        ).unwrap();
+
+        let node = MerkleNode::new(NodeType::Root, metadata, children, None, None).unwrap();
 
         assert!(utils::validate_node(&node).is_ok());
     }
@@ -803,14 +780,8 @@ mod tests {
             content_size: 1024,
             ..Default::default()
         };
-        
-        let node = MerkleNode::new(
-            NodeType::Root,
-            metadata,
-            BTreeMap::new(),
-            None,
-            None,
-        ).unwrap();
+
+        let node = MerkleNode::new(NodeType::Root, metadata, BTreeMap::new(), None, None).unwrap();
 
         let stats = utils::compute_tree_stats(&node);
         assert_eq!(stats.total_messages, 5);

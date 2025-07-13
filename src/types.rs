@@ -7,6 +7,8 @@
 //! the sniff application for representing Claude Code sessions,
 //! messages, and operations.
 
+#![allow(clippy::match_same_arms)]
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -125,9 +127,9 @@ pub enum UserContentType {
 pub enum ContentBlock {
     /// Text content block.
     #[serde(rename = "text")]
-    Text { 
+    Text {
         /// The text content.
-        text: String 
+        text: String,
     },
 
     /// Tool result content block.
@@ -182,7 +184,7 @@ pub struct ToolResult {
     /// ID of the tool use this result corresponds to.
     pub tool_use_id: ToolUseId,
 
-    /// Type is always "tool_result".
+    /// Type is always "`tool_result`".
     #[serde(rename = "type")]
     pub result_type: String,
 
@@ -219,11 +221,11 @@ pub struct ToolUseResult {
     #[serde(rename = "isImage", default)]
     pub is_image: bool,
 
-    /// Old todos state (for TodoWrite tool).
+    /// Old todos state (for `TodoWrite` tool).
     #[serde(rename = "oldTodos", skip_serializing_if = "Option::is_none")]
     pub old_todos: Option<Vec<Todo>>,
 
-    /// New todos state (for TodoWrite tool).
+    /// New todos state (for `TodoWrite` tool).
     #[serde(rename = "newTodos", skip_serializing_if = "Option::is_none")]
     pub new_todos: Option<Vec<Todo>>,
 
@@ -244,7 +246,7 @@ pub struct ToolUseResult {
     pub truncated: Option<bool>,
 }
 
-/// A todo item for the TodoWrite tool.
+/// A todo item for the `TodoWrite` tool.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Todo {
     /// Unique identifier for the todo.
@@ -360,7 +362,7 @@ pub struct TokenUsage {
 pub struct SummaryMessage {
     /// Summary text describing the session or conversation.
     pub summary: String,
-    
+
     /// Unique identifier for the leaf node in the conversation tree.
     #[serde(rename = "leafUuid")]
     pub leaf_uuid: String,
@@ -368,6 +370,7 @@ pub struct SummaryMessage {
 
 impl ClaudeMessage {
     /// Returns the base message information (if available).
+    #[must_use]
     pub fn base(&self) -> Option<&MessageBase> {
         match self {
             ClaudeMessage::User(msg) => Some(&msg.base),
@@ -377,41 +380,49 @@ impl ClaudeMessage {
     }
 
     /// Returns the message UUID (if available).
+    #[must_use]
     pub fn uuid(&self) -> Option<&MessageUuid> {
         self.base().map(|base| &base.uuid)
     }
 
     /// Returns the parent message UUID, if any.
+    #[must_use]
     pub fn parent_uuid(&self) -> Option<&MessageUuid> {
         self.base()?.parent_uuid.as_ref()
     }
 
     /// Returns the session ID this message belongs to (if available).
+    #[must_use]
     pub fn session_id(&self) -> Option<&SessionId> {
         self.base().map(|base| &base.session_id)
     }
 
     /// Returns the timestamp when this message was created (if available).
+    #[must_use]
     pub fn timestamp(&self) -> Option<DateTime<Utc>> {
         self.base().map(|base| base.timestamp)
     }
 
     /// Returns the current working directory for this message (if available).
+    #[must_use]
     pub fn cwd(&self) -> Option<&PathBuf> {
         self.base().map(|base| &base.cwd)
     }
 
     /// Returns true if this is a user message.
+    #[must_use]
     pub fn is_user_message(&self) -> bool {
         matches!(self, ClaudeMessage::User(_))
     }
 
     /// Returns true if this is an assistant message.
+    #[must_use]
     pub fn is_assistant_message(&self) -> bool {
         matches!(self, ClaudeMessage::Assistant(_))
     }
 
     /// Extracts tool use operations from this message.
+    #[must_use]
     pub fn extract_tool_uses(&self) -> Vec<ToolUseOperation> {
         match self {
             ClaudeMessage::User(_) => Vec::new(),
@@ -428,7 +439,9 @@ impl ClaudeMessage {
                         timestamp: msg.base.timestamp,
                         cwd: msg.base.cwd.clone(),
                     }),
-                    AssistantContentItem::Text { .. } | AssistantContentItem::Thinking { .. } => None,
+                    AssistantContentItem::Text { .. } | AssistantContentItem::Thinking { .. } => {
+                        None
+                    }
                 })
                 .collect(),
             ClaudeMessage::Summary(_) => Vec::new(), // Summary messages don't contain tool uses
@@ -436,26 +449,30 @@ impl ClaudeMessage {
     }
 
     /// Extracts thinking content from this message for indexing and analysis.
+    #[must_use]
     pub fn extract_thinking_content(&self) -> Vec<String> {
         match self {
             ClaudeMessage::User(_) => Vec::new(),
-            ClaudeMessage::Assistant(msg) => msg
-                .message
-                .content
-                .iter()
-                .filter_map(|item| match item {
-                    AssistantContentItem::Thinking { thinking } => Some(thinking.clone()),
-                    AssistantContentItem::Text { .. } | AssistantContentItem::ToolUse { .. } => None,
-                })
-                .collect(),
+            ClaudeMessage::Assistant(msg) => {
+                msg.message
+                    .content
+                    .iter()
+                    .filter_map(|item| match item {
+                        AssistantContentItem::Thinking { thinking } => Some(thinking.clone()),
+                        AssistantContentItem::Text { .. }
+                        | AssistantContentItem::ToolUse { .. } => None,
+                    })
+                    .collect()
+            }
             ClaudeMessage::Summary(_) => Vec::new(), // Summary messages don't contain thinking content
         }
     }
 
     /// Extracts all text content (including thinking) from this message.
+    #[must_use]
     pub fn extract_all_text_content(&self) -> Vec<String> {
         let mut content = Vec::new();
-        
+
         match self {
             ClaudeMessage::User(msg) => {
                 match &msg.message.content {
@@ -464,10 +481,15 @@ impl ClaudeMessage {
                         for block in blocks {
                             match block {
                                 ContentBlock::Text { text } => content.push(text.clone()),
-                                ContentBlock::ToolResult { content: tool_content, .. } => {
+                                ContentBlock::ToolResult {
+                                    content: tool_content,
+                                    ..
+                                } => {
                                     // Tool results contain valuable textual output that should be indexed
                                     match tool_content {
-                                        ToolResultContent::Simple(text) => content.push(text.clone()),
+                                        ToolResultContent::Simple(text) => {
+                                            content.push(text.clone())
+                                        }
                                         ToolResultContent::Nested(blocks) => {
                                             for block in blocks {
                                                 let NestedContentBlock::Text { text } = block;
@@ -478,12 +500,12 @@ impl ClaudeMessage {
                                 }
                                 ContentBlock::ToolUse { name, input, .. } => {
                                     // Include tool name for searchability
-                                    content.push(format!("Tool: {}", name));
+                                    content.push(format!("Tool: {name}"));
                                     // Include string parameters for searchability
                                     if let Some(obj) = input.as_object() {
                                         for (key, value) in obj {
                                             if let Some(str_value) = value.as_str() {
-                                                content.push(format!("{}: {}", key, str_value));
+                                                content.push(format!("{key}: {str_value}"));
                                             }
                                         }
                                     }
@@ -503,14 +525,16 @@ impl ClaudeMessage {
                 for item in &msg.message.content {
                     match item {
                         AssistantContentItem::Text { text } => content.push(text.clone()),
-                        AssistantContentItem::Thinking { thinking } => content.push(thinking.clone()),
+                        AssistantContentItem::Thinking { thinking } => {
+                            content.push(thinking.clone())
+                        }
                         AssistantContentItem::ToolUse { name, input, .. } => {
                             // Include tool name and parameters for searchability
-                            content.push(format!("Tool: {}", name));
+                            content.push(format!("Tool: {name}"));
                             // Include string parameters for searchability
                             for (key, value) in input {
                                 if let Some(str_value) = value.as_str() {
-                                    content.push(format!("{}: {}", key, str_value));
+                                    content.push(format!("{key}: {str_value}"));
                                 }
                             }
                         }
@@ -522,7 +546,7 @@ impl ClaudeMessage {
                 content.push(msg.summary.clone());
             }
         }
-        
+
         content
     }
 }
@@ -551,11 +575,13 @@ pub struct ToolUseOperation {
 
 impl ToolUseOperation {
     /// Returns the tool name.
+    #[must_use]
     pub fn tool_name(&self) -> &str {
         &self.name
     }
 
     /// Returns the tool use ID.
+    #[must_use]
     pub fn tool_id(&self) -> &str {
         &self.id
     }
@@ -569,16 +595,19 @@ impl ToolUseOperation {
     }
 
     /// Gets a boolean input parameter by name.
+    #[must_use]
     pub fn get_bool_input(&self, key: &str) -> Option<bool> {
         self.input.get(key)?.as_bool()
     }
 
     /// Gets a numeric input parameter by name.
+    #[must_use]
     pub fn get_number_input(&self, key: &str) -> Option<f64> {
         self.input.get(key)?.as_f64()
     }
 
     /// Returns true if this is a file operation tool.
+    #[must_use]
     pub fn is_file_operation(&self) -> bool {
         matches!(
             self.name.as_str(),
@@ -587,16 +616,19 @@ impl ToolUseOperation {
     }
 
     /// Returns true if this is a directory operation tool.
+    #[must_use]
     pub fn is_directory_operation(&self) -> bool {
         matches!(self.name.as_str(), "LS" | "Glob")
     }
 
     /// Returns true if this is a command execution tool.
+    #[must_use]
     pub fn is_command_operation(&self) -> bool {
         self.name == "Bash"
     }
 
     /// Returns true if this is a network operation tool.
+    #[must_use]
     pub fn is_network_operation(&self) -> bool {
         matches!(self.name.as_str(), "WebFetch" | "WebSearch")
     }
@@ -627,8 +659,8 @@ mod tests {
 
         let message: ClaudeMessage = serde_json::from_str(json).unwrap();
         assert!(message.is_user_message());
-        assert_eq!(message.uuid(), "test-uuid");
-        assert_eq!(message.session_id(), "test-session");
+        assert_eq!(message.uuid(), Some(&"test-uuid".to_string()));
+        assert_eq!(message.session_id(), Some(&"test-session".to_string()));
     }
 
     #[test]
@@ -702,7 +734,7 @@ mod tests {
 // Bincode-compatible storage types (for database serialization)
 // These types convert untagged enums to tagged enums that bincode can handle
 
-/// Bincode-compatible version of UserContentType for storage.
+/// Bincode-compatible version of `UserContentType` for storage.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum StorageUserContentType {
     /// Array of content blocks (newer format).
@@ -713,7 +745,7 @@ pub enum StorageUserContentType {
     Text(String),
 }
 
-/// Bincode-compatible version of ToolResultContent for storage.
+/// Bincode-compatible version of `ToolResultContent` for storage.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum StorageToolResultContent {
     /// Array of nested content blocks (newer format).
@@ -722,7 +754,7 @@ pub enum StorageToolResultContent {
     Simple(String),
 }
 
-/// Bincode-compatible version of ClaudeMessage for storage.
+/// Bincode-compatible version of `ClaudeMessage` for storage.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum StorageClaudeMessage {
     /// A message from the user.
@@ -733,7 +765,7 @@ pub enum StorageClaudeMessage {
     Summary(SummaryMessage),
 }
 
-/// Bincode-compatible version of UserMessage for storage.
+/// Bincode-compatible version of `UserMessage` for storage.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StorageUserMessage {
     /// Base message fields.
@@ -744,7 +776,7 @@ pub struct StorageUserMessage {
     pub tool_use_result: Option<ToolUseResultData>,
 }
 
-/// Bincode-compatible version of UserMessageContent for storage.
+/// Bincode-compatible version of `UserMessageContent` for storage.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StorageUserMessageContent {
     /// Role is always "user" for user messages.
@@ -757,7 +789,7 @@ impl From<UserContentType> for StorageUserContentType {
     fn from(content: UserContentType) -> Self {
         match content {
             UserContentType::ContentBlocks(blocks) => StorageUserContentType::ContentBlocks(
-                blocks.into_iter().map(|b| b.into()).collect()
+                blocks.into_iter().map(std::convert::Into::into).collect(),
             ),
             UserContentType::ToolResults(results) => StorageUserContentType::ToolResults(results),
             UserContentType::Text(text) => StorageUserContentType::Text(text),
@@ -769,7 +801,7 @@ impl From<StorageUserContentType> for UserContentType {
     fn from(content: StorageUserContentType) -> Self {
         match content {
             StorageUserContentType::ContentBlocks(blocks) => UserContentType::ContentBlocks(
-                blocks.into_iter().map(|b| b.into()).collect()
+                blocks.into_iter().map(std::convert::Into::into).collect(),
             ),
             StorageUserContentType::ToolResults(results) => UserContentType::ToolResults(results),
             StorageUserContentType::Text(text) => UserContentType::Text(text),
@@ -795,13 +827,13 @@ impl From<StorageToolResultContent> for ToolResultContent {
     }
 }
 
-/// Bincode-compatible version of ContentBlock for storage.
+/// Bincode-compatible version of `ContentBlock` for storage.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum StorageContentBlock {
     /// Text content block.
-    Text { 
+    Text {
         /// The text content.
-        text: String 
+        text: String,
     },
     /// Tool result content block.
     ToolResult {
@@ -827,19 +859,22 @@ impl From<ContentBlock> for StorageContentBlock {
     fn from(block: ContentBlock) -> Self {
         match block {
             ContentBlock::Text { text } => StorageContentBlock::Text { text },
-            ContentBlock::ToolResult { tool_use_id, content, is_error } => {
-                StorageContentBlock::ToolResult {
-                    tool_use_id,
-                    content: content.into(),
-                    is_error,
-                }
+            ContentBlock::ToolResult {
+                tool_use_id,
+                content,
+                is_error,
+            } => StorageContentBlock::ToolResult {
+                tool_use_id,
+                content: content.into(),
+                is_error,
             },
-            ContentBlock::ToolUse { id, name, input } => {
-                StorageContentBlock::ToolUse { 
-                    id, 
-                    name, 
-                    input: input.as_object().map(|obj| obj.clone().into_iter().collect()).unwrap_or_default()
-                }
+            ContentBlock::ToolUse { id, name, input } => StorageContentBlock::ToolUse {
+                id,
+                name,
+                input: input
+                    .as_object()
+                    .map(|obj| obj.clone().into_iter().collect())
+                    .unwrap_or_default(),
             },
         }
     }
@@ -849,19 +884,19 @@ impl From<StorageContentBlock> for ContentBlock {
     fn from(block: StorageContentBlock) -> Self {
         match block {
             StorageContentBlock::Text { text } => ContentBlock::Text { text },
-            StorageContentBlock::ToolResult { tool_use_id, content, is_error } => {
-                ContentBlock::ToolResult {
-                    tool_use_id,
-                    content: content.into(),
-                    is_error,
-                }
+            StorageContentBlock::ToolResult {
+                tool_use_id,
+                content,
+                is_error,
+            } => ContentBlock::ToolResult {
+                tool_use_id,
+                content: content.into(),
+                is_error,
             },
-            StorageContentBlock::ToolUse { id, name, input } => {
-                ContentBlock::ToolUse { 
-                    id, 
-                    name, 
-                    input: serde_json::Value::Object(input.into_iter().collect())
-                }
+            StorageContentBlock::ToolUse { id, name, input } => ContentBlock::ToolUse {
+                id,
+                name,
+                input: serde_json::Value::Object(input.into_iter().collect()),
             },
         }
     }
@@ -870,22 +905,18 @@ impl From<StorageContentBlock> for ContentBlock {
 impl From<ClaudeMessage> for StorageClaudeMessage {
     fn from(message: ClaudeMessage) -> Self {
         match message {
-            ClaudeMessage::User(user_msg) => {
-                StorageClaudeMessage::User(StorageUserMessage {
-                    base: user_msg.base,
-                    message: StorageUserMessageContent {
-                        role: user_msg.message.role,
-                        content: user_msg.message.content.into(),
-                    },
-                    tool_use_result: user_msg.tool_use_result,
-                })
-            },
+            ClaudeMessage::User(user_msg) => StorageClaudeMessage::User(StorageUserMessage {
+                base: user_msg.base,
+                message: StorageUserMessageContent {
+                    role: user_msg.message.role,
+                    content: user_msg.message.content.into(),
+                },
+                tool_use_result: user_msg.tool_use_result,
+            }),
             ClaudeMessage::Assistant(assistant_msg) => {
                 StorageClaudeMessage::Assistant(assistant_msg)
-            },
-            ClaudeMessage::Summary(summary_msg) => {
-                StorageClaudeMessage::Summary(summary_msg)
-            },
+            }
+            ClaudeMessage::Summary(summary_msg) => StorageClaudeMessage::Summary(summary_msg),
         }
     }
 }
@@ -893,28 +924,25 @@ impl From<ClaudeMessage> for StorageClaudeMessage {
 impl From<StorageClaudeMessage> for ClaudeMessage {
     fn from(message: StorageClaudeMessage) -> Self {
         match message {
-            StorageClaudeMessage::User(user_msg) => {
-                ClaudeMessage::User(UserMessage {
-                    base: user_msg.base,
-                    message: UserMessageContent {
-                        role: user_msg.message.role,
-                        content: user_msg.message.content.into(),
-                    },
-                    tool_use_result: user_msg.tool_use_result,
-                })
-            },
+            StorageClaudeMessage::User(user_msg) => ClaudeMessage::User(UserMessage {
+                base: user_msg.base,
+                message: UserMessageContent {
+                    role: user_msg.message.role,
+                    content: user_msg.message.content.into(),
+                },
+                tool_use_result: user_msg.tool_use_result,
+            }),
             StorageClaudeMessage::Assistant(assistant_msg) => {
                 ClaudeMessage::Assistant(assistant_msg)
-            },
-            StorageClaudeMessage::Summary(summary_msg) => {
-                ClaudeMessage::Summary(summary_msg)
-            },
+            }
+            StorageClaudeMessage::Summary(summary_msg) => ClaudeMessage::Summary(summary_msg),
         }
     }
 }
 
 impl StorageClaudeMessage {
     /// Extracts all text content (including thinking) from this message.
+    #[must_use]
     pub fn extract_all_text_content(&self) -> Vec<String> {
         // Convert to regular ClaudeMessage and use its method
         let regular_message: ClaudeMessage = self.clone().into();

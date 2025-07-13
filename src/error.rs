@@ -110,7 +110,7 @@ pub enum SniffError {
         reason: String,
     },
 
-    /// Error occurred during language detection or TreeSitter parsing.
+    /// Error occurred during language detection or `TreeSitter` parsing.
     #[error("Language detection error: {reason}")]
     LanguageDetection {
         /// The reason for the language detection failure.
@@ -127,6 +127,7 @@ pub enum SniffError {
 
 impl SniffError {
     /// Creates a new JSONL parsing error.
+    #[must_use]
     pub fn jsonl_parse(line: usize, source: serde_json::Error) -> Self {
         Self::JsonlParse { line, source }
     }
@@ -140,6 +141,7 @@ impl SniffError {
     }
 
     /// Creates a new file watcher error.
+    #[must_use]
     pub fn file_watcher(source: notify::Error) -> Self {
         Self::FileWatcher { source }
     }
@@ -250,8 +252,8 @@ mod tests {
     #[test]
     fn test_error_creation() {
         // Create a real JSON parsing error by parsing invalid JSON
-        let json_error = serde_json::from_str::<serde_json::Value>("invalid json").unwrap_err();
-        let jsonl_error = SniffError::jsonl_parse(42, json_error);
+        let parse_error = serde_json::from_str::<serde_json::Value>("invalid json").unwrap_err();
+        let jsonl_error = SniffError::jsonl_parse(42, parse_error);
         assert!(matches!(
             jsonl_error,
             SniffError::JsonlParse { line: 42, .. }
@@ -264,10 +266,7 @@ mod tests {
         assert!(matches!(fs_error, SniffError::FileSystem { .. }));
 
         let session_error = SniffError::invalid_session("Missing session ID");
-        assert!(matches!(
-            session_error,
-            SniffError::InvalidSession { .. }
-        ));
+        assert!(matches!(session_error, SniffError::InvalidSession { .. }));
     }
 
     #[test]

@@ -171,6 +171,7 @@ impl Default for OperationExtractor {
 
 impl OperationExtractor {
     /// Creates a new operation extractor with default configuration.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             analyze_dependencies: true,
@@ -179,6 +180,7 @@ impl OperationExtractor {
     }
 
     /// Creates a new operation extractor with custom configuration.
+    #[must_use]
     pub fn with_config(config: ExtractionConfig) -> Self {
         Self {
             analyze_dependencies: config.analyze_dependencies,
@@ -384,9 +386,12 @@ impl OperationExtractor {
     }
 
     /// Extracts tool use IDs from user message content.
-    fn extract_tool_use_ids_from_user_message(&self, user_msg: &crate::types::UserMessage) -> Vec<String> {
-        use crate::types::{UserContentType, ContentBlock};
-        
+    fn extract_tool_use_ids_from_user_message(
+        &self,
+        user_msg: &crate::types::UserMessage,
+    ) -> Vec<String> {
+        use crate::types::{ContentBlock, UserContentType};
+
         let mut tool_use_ids = Vec::new();
 
         match &user_msg.message.content {
@@ -485,6 +490,7 @@ pub struct OperationStats {
 
 impl OperationStats {
     /// Computes statistics from a collection of operations.
+    #[must_use]
     pub fn from_operations(operations: &[Operation]) -> Self {
         let mut stats = Self {
             total_operations: operations.len(),
