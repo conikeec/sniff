@@ -63,6 +63,8 @@ serde_yaml = "0.9"
 # UUID generation for pattern IDs
 uuid = { version = "1.6", features = ["v4", "serde"] }
 
-[dev-dependencies]
+# Temporary file handling
 tempfile = "3.8"
+
+[dev-dependencies]
 tokio-test = "0.4"

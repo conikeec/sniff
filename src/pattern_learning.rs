@@ -153,7 +153,7 @@ impl PatternLearningManager {
     /// Creates a new pattern learning manager.
     pub fn new<P: AsRef<Path>>(base_path: P) -> Result<Self> {
         let sniff_path = base_path.as_ref().join(".sniff");
-        
+
         let mut manager = Self {
             sniff_path,
             config: LearningConfig::default(),
@@ -162,10 +162,10 @@ impl PatternLearningManager {
 
         // Initialize .sniff folder structure
         manager.initialize_folder_structure()?;
-        
+
         // Load configuration
         manager.load_config()?;
-        
+
         // Load existing learned patterns
         manager.load_learned_patterns()?;
 
@@ -177,7 +177,7 @@ impl PatternLearningManager {
         let folders = [
             "patterns",
             "patterns/rust",
-            "patterns/python", 
+            "patterns/python",
             "patterns/typescript",
             "patterns/javascript",
             "patterns/go",
@@ -196,8 +196,7 @@ impl PatternLearningManager {
         for folder in &folders {
             let path = self.sniff_path.join(folder);
             if !path.exists() {
-                std::fs::create_dir_all(&path)
-                    .map_err(|e| SniffError::file_system(&path, e))?;
+                std::fs::create_dir_all(&path).map_err(|e| SniffError::file_system(&path, e))?;
             }
         }
 
@@ -207,11 +206,11 @@ impl PatternLearningManager {
     /// Loads learning configuration.
     fn load_config(&mut self) -> Result<()> {
         let config_path = self.sniff_path.join("config").join("learning-config.yaml");
-        
+
         if config_path.exists() {
             let content = std::fs::read_to_string(&config_path)
                 .map_err(|e| SniffError::file_system(&config_path, e))?;
-            
+
             self.config = serde_yaml::from_str(&content).map_err(|e| {
                 SniffError::invalid_format(
                     "learning config".to_string(),
@@ -229,7 +228,7 @@ impl PatternLearningManager {
     /// Saves learning configuration.
     fn save_config(&self) -> Result<()> {
         let config_path = self.sniff_path.join("config").join("learning-config.yaml");
-        
+
         let content = serde_yaml::to_string(&self.config).map_err(|e| {
             SniffError::invalid_format(
                 "learning config serialization".to_string(),
@@ -264,8 +263,12 @@ impl PatternLearningManager {
     }
 
     /// Loads learned patterns for a specific language.
-    fn load_patterns_for_language(&self, language: SupportedLanguage) -> Result<Vec<LearnedPattern>> {
-        let patterns_path = self.sniff_path
+    fn load_patterns_for_language(
+        &self,
+        language: SupportedLanguage,
+    ) -> Result<Vec<LearnedPattern>> {
+        let patterns_path = self
+            .sniff_path
             .join("patterns")
             .join(language.name())
             .join("learned-patterns.yaml");
@@ -280,7 +283,10 @@ impl PatternLearningManager {
         let patterns: Vec<LearnedPattern> = serde_yaml::from_str(&content).map_err(|e| {
             SniffError::invalid_format(
                 "learned patterns".to_string(),
-                format!("Failed to parse learned patterns for {}: {e}", language.name()),
+                format!(
+                    "Failed to parse learned patterns for {}: {e}",
+                    language.name()
+                ),
             )
         })?;
 
@@ -288,10 +294,13 @@ impl PatternLearningManager {
     }
 
     /// Creates a new learned pattern.
-    pub fn create_pattern(&mut self, request: PatternCreationRequest) -> Result<PatternCreationResponse> {
+    pub fn create_pattern(
+        &mut self,
+        request: PatternCreationRequest,
+    ) -> Result<PatternCreationResponse> {
         // Validate request
         let warnings = self.validate_pattern_request(&request)?;
-        
+
         if request.confidence < self.config.min_confidence {
             return Ok(PatternCreationResponse {
                 success: false,
@@ -306,10 +315,10 @@ impl PatternLearningManager {
         }
 
         // Check if we're at the pattern limit for this language
-        let current_count = self.learned_patterns
+        let current_count = self
+            .learned_patterns
             .get(&request.language)
-            .map(|patterns| patterns.len())
-            .unwrap_or(0);
+            .map_or(0, std::vec::Vec::len);
 
         if current_count >= self.config.max_patterns_per_language {
             return Ok(PatternCreationResponse {
@@ -317,7 +326,8 @@ impl PatternLearningManager {
                 pattern_id: None,
                 error: Some(format!(
                     "Maximum patterns reached for {} ({})",
-                    request.language.name(), self.config.max_patterns_per_language
+                    request.language.name(),
+                    self.config.max_patterns_per_language
                 )),
                 warnings,
                 storage_path: None,
@@ -326,7 +336,7 @@ impl PatternLearningManager {
 
         // Create pattern ID
         let pattern_id = format!("learned_{}", Uuid::new_v4().to_string().replace('-', "_"));
-        
+
         // Create detection rule
         let rule = DetectionRule {
             id: pattern_id.clone(),
@@ -407,7 +417,8 @@ impl PatternLearningManager {
 
         // Validate examples
         if request.examples.is_empty() {
-            warnings.push("No examples provided - pattern may be difficult to validate".to_string());
+            warnings
+                .push("No examples provided - pattern may be difficult to validate".to_string());
         }
 
         Ok(warnings)
@@ -415,12 +426,14 @@ impl PatternLearningManager {
 
     /// Saves learned patterns for a specific language.
     fn save_patterns_for_language(&self, language: SupportedLanguage) -> Result<PathBuf> {
-        let patterns_path = self.sniff_path
+        let patterns_path = self
+            .sniff_path
             .join("patterns")
             .join(language.name())
             .join("learned-patterns.yaml");
 
-        let patterns = self.learned_patterns
+        let patterns = self
+            .learned_patterns
             .get(&language)
             .cloned()
             .unwrap_or_default();
@@ -439,6 +452,7 @@ impl PatternLearningManager {
     }
 
     /// Gets learned patterns for a specific language.
+    #[must_use]
     pub fn get_patterns_for_language(&self, language: SupportedLanguage) -> Vec<&LearnedPattern> {
         self.learned_patterns
             .get(&language)
@@ -447,6 +461,7 @@ impl PatternLearningManager {
     }
 
     /// Gets pattern statistics.
+    #[must_use]
     pub fn get_statistics(&self) -> PatternStatistics {
         let mut total_patterns = 0;
         let mut patterns_by_language = HashMap::new();
@@ -461,19 +476,18 @@ impl PatternLearningManager {
 
             for pattern in patterns {
                 // Count by severity
-                *patterns_by_severity.entry(pattern.rule.severity).or_insert(0) += 1;
-                
+                *patterns_by_severity
+                    .entry(pattern.rule.severity)
+                    .or_insert(0) += 1;
+
                 // Sum confidence
                 total_confidence += pattern.metadata.confidence;
-                
+
                 // Sum detections
                 total_detections += pattern.metadata.detection_count;
-                
+
                 // Track active patterns
-                most_active.push((
-                    pattern.rule.name.clone(),
-                    pattern.metadata.detection_count,
-                ));
+                most_active.push((pattern.rule.name.clone(), pattern.metadata.detection_count));
             }
         }
 
@@ -499,9 +513,10 @@ impl PatternLearningManager {
     }
 
     /// Converts learned patterns to a playbook for a specific language.
+    #[must_use]
     pub fn to_playbook(&self, language: SupportedLanguage) -> Option<Playbook> {
         let patterns = self.learned_patterns.get(&language)?;
-        
+
         if patterns.is_empty() {
             return None;
         }
@@ -528,6 +543,7 @@ impl PatternLearningManager {
     }
 
     /// Gets the path to the .sniff folder.
+    #[must_use]
     pub fn sniff_path(&self) -> &Path {
         &self.sniff_path
     }

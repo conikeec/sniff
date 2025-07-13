@@ -488,7 +488,7 @@ impl ClaudeMessage {
                                     // Tool results contain valuable textual output that should be indexed
                                     match tool_content {
                                         ToolResultContent::Simple(text) => {
-                                            content.push(text.clone())
+                                            content.push(text.clone());
                                         }
                                         ToolResultContent::Nested(blocks) => {
                                             for block in blocks {
@@ -526,7 +526,7 @@ impl ClaudeMessage {
                     match item {
                         AssistantContentItem::Text { text } => content.push(text.clone()),
                         AssistantContentItem::Thinking { thinking } => {
-                            content.push(thinking.clone())
+                            content.push(thinking.clone());
                         }
                         AssistantContentItem::ToolUse { name, input, .. } => {
                             // Include tool name and parameters for searchability

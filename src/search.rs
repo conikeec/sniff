@@ -148,7 +148,7 @@ impl EnhancedSearchEngine {
         // Step 2: Build conversation threads for each matching session
         for (session_id, _snippets) in basic_results {
             if let Ok(thread) = self.build_basic_thread(&session_id, query) {
-                threads.push(thread)
+                threads.push(thread);
             } else {
                 // Session found in basic search but no actual message matches - skip silently
                 // This ensures we only return threads with real matching content

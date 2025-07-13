@@ -71,23 +71,23 @@ impl SimpleSessionAnalyzer {
     pub fn new() -> Result<Self> {
         let jsonl_parser = JsonlParser::new();
         let operation_extractor = OperationExtractor::new();
-        
+
         // Check for learned patterns in .sniff folder first, then enhanced playbooks
         let current_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         let sniff_dir = current_dir.join(".sniff");
         let playbook_dir = std::path::Path::new("playbooks");
-        
+
         let bullshit_analyzer = if sniff_dir.exists() {
             // Use learned patterns from .sniff folder (highest priority)
             match BullshitAnalyzer::new_with_learned_patterns(&current_dir) {
                 Ok(analyzer) => analyzer,
                 Err(e) => {
-                    eprintln!("Warning: Failed to load learned patterns: {}", e);
+                    eprintln!("Warning: Failed to load learned patterns: {e}");
                     // Fallback to enhanced playbooks if available
                     if playbook_dir.exists() {
                         let mut analyzer = BullshitAnalyzer::new_without_defaults()?;
                         if let Err(e) = analyzer.load_playbooks(playbook_dir) {
-                            eprintln!("Warning: Failed to load enhanced playbooks: {}", e);
+                            eprintln!("Warning: Failed to load enhanced playbooks: {e}");
                             BullshitAnalyzer::new()?
                         } else {
                             analyzer
@@ -101,7 +101,7 @@ impl SimpleSessionAnalyzer {
             // Use enhanced playbooks only (no defaults to avoid duplicates)
             let mut analyzer = BullshitAnalyzer::new_without_defaults()?;
             if let Err(e) = analyzer.load_playbooks(playbook_dir) {
-                eprintln!("Warning: Failed to load enhanced playbooks: {}", e);
+                eprintln!("Warning: Failed to load enhanced playbooks: {e}");
                 // Fallback to default analyzer if enhanced loading fails
                 BullshitAnalyzer::new()?
             } else {
@@ -111,7 +111,7 @@ impl SimpleSessionAnalyzer {
             // Use default playbooks when no enhanced playbooks or learned patterns available
             BullshitAnalyzer::new()?
         };
-        
+
         let display_formatter = BullshitDisplayFormatter::new();
 
         Ok(Self {
@@ -127,26 +127,26 @@ impl SimpleSessionAnalyzer {
     pub fn new_quiet() -> Result<Self> {
         let jsonl_parser = JsonlParser::new();
         let operation_extractor = OperationExtractor::new();
-        
+
         // Check for learned patterns in .sniff folder first, then enhanced playbooks
         let current_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         let sniff_dir = current_dir.join(".sniff");
         let playbook_dir = std::path::Path::new("playbooks");
-        
+
         let bullshit_analyzer = if sniff_dir.exists() {
             // Use learned patterns from .sniff folder (highest priority)
             match BullshitAnalyzer::new_with_learned_patterns(&current_dir) {
                 Ok(analyzer) => analyzer,
                 Err(e) => {
                     if !cfg!(test) {
-                        eprintln!("Warning: Failed to load learned patterns: {}", e);
+                        eprintln!("Warning: Failed to load learned patterns: {e}");
                     }
                     // Fallback to enhanced playbooks if available
                     if playbook_dir.exists() {
                         let mut analyzer = BullshitAnalyzer::new_without_defaults()?;
                         if let Err(e) = analyzer.load_playbooks(playbook_dir) {
                             if !cfg!(test) {
-                                eprintln!("Warning: Failed to load enhanced playbooks: {}", e);
+                                eprintln!("Warning: Failed to load enhanced playbooks: {e}");
                             }
                             BullshitAnalyzer::new()?
                         } else {
@@ -161,8 +161,9 @@ impl SimpleSessionAnalyzer {
             // Use enhanced playbooks only (no defaults to avoid duplicates)
             let mut analyzer = BullshitAnalyzer::new_without_defaults()?;
             if let Err(e) = analyzer.load_playbooks(playbook_dir) {
-                if !cfg!(test) { // Don't print warnings during tests
-                    eprintln!("Warning: Failed to load enhanced playbooks: {}", e);
+                if !cfg!(test) {
+                    // Don't print warnings during tests
+                    eprintln!("Warning: Failed to load enhanced playbooks: {e}");
                 }
                 // Fallback to default analyzer if enhanced loading fails
                 BullshitAnalyzer::new()?
@@ -173,7 +174,7 @@ impl SimpleSessionAnalyzer {
             // Use default playbooks when no enhanced playbooks or learned patterns available
             BullshitAnalyzer::new()?
         };
-        
+
         let display_formatter = BullshitDisplayFormatter::new();
 
         Ok(Self {

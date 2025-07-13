@@ -434,19 +434,22 @@ async fn main() -> Result<()> {
             output_file,
             checkpoint,
             diff_checkpoint,
-        } => handle_analyze_files_command(
-            paths,
-            format,
-            detailed,
-            include_hidden,
-            extensions,
-            exclude,
-            max_file_size_mb,
-            force_language,
-            output_file,
-            checkpoint,
-            diff_checkpoint,
-        ).await,
+        } => {
+            handle_analyze_files_command(
+                paths,
+                format,
+                detailed,
+                include_hidden,
+                extensions,
+                exclude,
+                max_file_size_mb,
+                force_language,
+                output_file,
+                checkpoint,
+                diff_checkpoint,
+            )
+            .await
+        }
 
         Commands::Checkpoint { command } => handle_checkpoint_command(command).await,
 
@@ -834,7 +837,10 @@ async fn handle_info_command(
                         println!("| Root Hash | `{}` |", root_hash);
                         println!("| Messages | {} |", session_node.metadata.message_count);
                         println!("| Operations | {} |", session_node.metadata.operation_count);
-                        println!("| Content Size | {} bytes |", session_node.metadata.content_size);
+                        println!(
+                            "| Content Size | {} bytes |",
+                            session_node.metadata.content_size
+                        );
                         println!("| Created | {} |", session_node.metadata.created_at);
                         println!("| Updated | {} |", session_node.metadata.updated_at);
                     }
@@ -1004,7 +1010,7 @@ async fn handle_stats_command(
         OutputFormat::Markdown => {
             println!("# Sniff Statistics");
             println!();
-            
+
             println!("## Database");
             println!();
             println!("| Metric | Value |");
@@ -1012,7 +1018,10 @@ async fn handle_stats_command(
             println!("| Total Nodes | {} |", db_stats.total_nodes);
             println!("| Total Sessions | {} |", db_stats.total_sessions);
             println!("| Total Projects | {} |", db_stats.total_projects);
-            println!("| File Size | {:.2} MB |", db_stats.file_size_bytes as f64 / 1_048_576.0);
+            println!(
+                "| File Size | {:.2} MB |",
+                db_stats.file_size_bytes as f64 / 1_048_576.0
+            );
             println!("| Schema Version | {} |", db_stats.schema_version);
             println!();
 
@@ -1033,7 +1042,7 @@ async fn handle_stats_command(
                 println!();
                 println!("**Project**: `{}`", project);
                 println!();
-                
+
                 // Get project-specific statistics
                 let storage_config = sniff::storage::StorageConfig {
                     db_path: database_path,
@@ -1431,7 +1440,11 @@ fn display_table_format(analyses: &[SimpleSessionAnalysis], detailed: bool) {
     }
 
     // Always show session analysis with issues and recommendations
-    if !analyses.is_empty() && analyses.iter().any(|a| !a.bullshit_detections.is_empty() || !a.recommendations.is_empty()) {
+    if !analyses.is_empty()
+        && analyses
+            .iter()
+            .any(|a| !a.bullshit_detections.is_empty() || !a.recommendations.is_empty())
+    {
         println!("📄 Session Analysis:");
         for analysis in analyses {
             if !analysis.bullshit_detections.is_empty() || !analysis.recommendations.is_empty() {
@@ -1563,7 +1576,11 @@ fn display_markdown_format(analyses: &[SimpleSessionAnalysis], detailed: bool) {
     }
 
     // Always show session analysis with issues and recommendations
-    if !analyses.is_empty() && analyses.iter().any(|a| !a.bullshit_detections.is_empty() || !a.recommendations.is_empty()) {
+    if !analyses.is_empty()
+        && analyses
+            .iter()
+            .any(|a| !a.bullshit_detections.is_empty() || !a.recommendations.is_empty())
+    {
         println!("## 📄 Session Analysis");
         println!();
         for analysis in analyses {
@@ -1572,7 +1589,10 @@ fn display_markdown_format(analyses: &[SimpleSessionAnalysis], detailed: bool) {
                 println!();
                 println!("- **Files**: {}", analysis.modified_files.len());
                 println!("- **Operations**: {}", analysis.file_operations.len());
-                println!("- **Patterns**: {}", analysis.metrics.total_bullshit_patterns);
+                println!(
+                    "- **Patterns**: {}",
+                    analysis.metrics.total_bullshit_patterns
+                );
                 println!("- **Quality**: {:.1}%", analysis.metrics.quality_score);
                 println!();
 
@@ -1664,22 +1684,25 @@ fn display_compact_format(analyses: &[SimpleSessionAnalysis]) {
 
 /// Handles pattern management commands.
 async fn handle_patterns_command(command: PatternCommands) -> Result<()> {
-    use sniff::{PatternCreationRequest, PatternLearningManager, SupportedLanguage};
     use sniff::playbook::{PatternScope, Severity};
-    
+    use sniff::{PatternCreationRequest, PatternLearningManager, SupportedLanguage};
+
     match command {
         PatternCommands::Init { force } => {
-            let current_dir = std::env::current_dir()
-                .map_err(|e| SniffError::file_system(".", e))?;
+            let current_dir =
+                std::env::current_dir().map_err(|e| SniffError::file_system(".", e))?;
             let sniff_dir = current_dir.join(".sniff");
-            
+
             if sniff_dir.exists() && !force {
                 println!("❌ .sniff directory already exists. Use --force to reinitialize.");
                 return Ok(());
             }
-            
-            let manager = PatternLearningManager::new(&current_dir)?;
-            println!("✅ Initialized .sniff folder structure at: {}", sniff_dir.display());
+
+            let _manager = PatternLearningManager::new(&current_dir)?;
+            println!(
+                "✅ Initialized .sniff folder structure at: {}",
+                sniff_dir.display()
+            );
             println!("📁 Pattern learning system is ready!");
             Ok(())
         }
@@ -1697,11 +1720,11 @@ async fn handle_patterns_command(command: PatternCommands) -> Result<()> {
             examples,
             false_positives,
         } => {
-            let current_dir = std::env::current_dir()
-                .map_err(|e| SniffError::file_system(".", e))?;
-            
+            let current_dir =
+                std::env::current_dir().map_err(|e| SniffError::file_system(".", e))?;
+
             let mut manager = PatternLearningManager::new(&current_dir)?;
-            
+
             // Parse language
             let supported_language = match language.to_lowercase().as_str() {
                 "rust" => SupportedLanguage::Rust,
@@ -1716,7 +1739,7 @@ async fn handle_patterns_command(command: PatternCommands) -> Result<()> {
                     return Ok(());
                 }
             };
-            
+
             // Parse severity
             let pattern_severity = match severity.to_lowercase().as_str() {
                 "info" => Severity::Info,
@@ -1725,11 +1748,14 @@ async fn handle_patterns_command(command: PatternCommands) -> Result<()> {
                 "high" => Severity::High,
                 "critical" => Severity::Critical,
                 _ => {
-                    println!("❌ Invalid severity: {}. Use: info, low, medium, high, critical", severity);
+                    println!(
+                        "❌ Invalid severity: {}. Use: info, low, medium, high, critical",
+                        severity
+                    );
                     return Ok(());
                 }
             };
-            
+
             // Parse scope
             let pattern_scope = match scope.to_lowercase().as_str() {
                 "file" => PatternScope::File,
@@ -1742,10 +1768,12 @@ async fn handle_patterns_command(command: PatternCommands) -> Result<()> {
                     return Ok(());
                 }
             };
-            
+
             // Parse tags
-            let pattern_tags = tags.map(|t| t.split(',').map(|s| s.trim().to_string()).collect()).unwrap_or_default();
-            
+            let pattern_tags = tags
+                .map(|t| t.split(',').map(|s| s.trim().to_string()).collect())
+                .unwrap_or_default();
+
             let request = PatternCreationRequest {
                 name,
                 description,
@@ -1761,7 +1789,7 @@ async fn handle_patterns_command(command: PatternCommands) -> Result<()> {
                 source: "cli".to_string(),
                 metadata: std::collections::HashMap::new(),
             };
-            
+
             match manager.create_pattern(request) {
                 Ok(response) => {
                     if response.success {
@@ -1789,16 +1817,20 @@ async fn handle_patterns_command(command: PatternCommands) -> Result<()> {
                     println!("❌ Error creating pattern: {}", e);
                 }
             }
-            
+
             Ok(())
         }
 
-        PatternCommands::List { language, format, active_only } => {
-            let current_dir = std::env::current_dir()
-                .map_err(|e| SniffError::file_system(".", e))?;
-            
+        PatternCommands::List {
+            language,
+            format,
+            active_only,
+        } => {
+            let current_dir =
+                std::env::current_dir().map_err(|e| SniffError::file_system(".", e))?;
+
             let manager = PatternLearningManager::new(&current_dir)?;
-            
+
             let languages = if let Some(lang) = language {
                 match lang.to_lowercase().as_str() {
                     "rust" => vec![SupportedLanguage::Rust],
@@ -1824,7 +1856,7 @@ async fn handle_patterns_command(command: PatternCommands) -> Result<()> {
                     SupportedLanguage::Cpp,
                 ]
             };
-            
+
             let mut all_patterns = Vec::new();
             for lang in languages {
                 let patterns = manager.get_patterns_for_language(lang);
@@ -1834,33 +1866,42 @@ async fn handle_patterns_command(command: PatternCommands) -> Result<()> {
                     }
                 }
             }
-            
+
             if all_patterns.is_empty() {
                 println!("📝 No learned patterns found.");
                 println!("💡 Use 'sniff patterns create' to add new patterns!");
                 return Ok(());
             }
-            
+
             match format {
                 OutputFormat::Table => {
                     println!("🧠 Learned Patterns");
                     println!("═══════════════════");
                     println!();
-                    
+
                     for (lang, pattern) in all_patterns {
-                        let status = if pattern.metadata.active { "✅" } else { "❌" };
-                        println!("{}  {} | {} | {}", 
+                        let status = if pattern.metadata.active {
+                            "✅"
+                        } else {
+                            "❌"
+                        };
+                        println!(
+                            "{}  {} | {} | {}",
                             status,
                             lang.name().to_uppercase(),
                             pattern.rule.severity.name(),
                             pattern.rule.name
                         );
                         println!("   ID: {}", pattern.metadata.id);
-                        println!("   Pattern: {}", match &pattern.rule.pattern_type {
-                            sniff::playbook::PatternType::Regex { pattern, .. } => pattern,
-                            _ => "N/A",
-                        });
-                        println!("   Detections: {} | Confidence: {:.1}%", 
+                        println!(
+                            "   Pattern: {}",
+                            match &pattern.rule.pattern_type {
+                                sniff::playbook::PatternType::Regex { pattern, .. } => pattern,
+                                _ => "N/A",
+                            }
+                        );
+                        println!(
+                            "   Detections: {} | Confidence: {:.1}%",
                             pattern.metadata.detection_count,
                             pattern.metadata.confidence * 100.0
                         );
@@ -1868,39 +1909,48 @@ async fn handle_patterns_command(command: PatternCommands) -> Result<()> {
                     }
                 }
                 OutputFormat::Json => {
-                    let json_data: Vec<_> = all_patterns.iter().map(|(lang, pattern)| {
-                        serde_json::json!({
-                            "language": lang.name(),
-                            "pattern": pattern
+                    let json_data: Vec<_> = all_patterns
+                        .iter()
+                        .map(|(lang, pattern)| {
+                            serde_json::json!({
+                                "language": lang.name(),
+                                "pattern": pattern
+                            })
                         })
-                    }).collect();
+                        .collect();
                     println!("{}", serde_json::to_string_pretty(&json_data).unwrap());
                 }
                 _ => {
-                    println!("❌ Format {} not supported for pattern listing", format as u8);
+                    println!(
+                        "❌ Format {} not supported for pattern listing",
+                        format as u8
+                    );
                 }
             }
-            
+
             Ok(())
         }
 
         PatternCommands::Stats { format } => {
-            let current_dir = std::env::current_dir()
-                .map_err(|e| SniffError::file_system(".", e))?;
-            
+            let current_dir =
+                std::env::current_dir().map_err(|e| SniffError::file_system(".", e))?;
+
             let manager = PatternLearningManager::new(&current_dir)?;
             let stats = manager.get_statistics();
-            
+
             match format {
                 OutputFormat::Table => {
                     println!("📊 Pattern Learning Statistics");
                     println!("════════════════════════════");
                     println!();
                     println!("Total Patterns: {}", stats.total_patterns);
-                    println!("Average Confidence: {:.1}%", stats.average_confidence * 100.0);
+                    println!(
+                        "Average Confidence: {:.1}%",
+                        stats.average_confidence * 100.0
+                    );
                     println!("Total Detections: {}", stats.total_detections);
                     println!();
-                    
+
                     if !stats.patterns_by_language.is_empty() {
                         println!("📋 Patterns by Language:");
                         for (lang, count) in &stats.patterns_by_language {
@@ -1908,7 +1958,7 @@ async fn handle_patterns_command(command: PatternCommands) -> Result<()> {
                         }
                         println!();
                     }
-                    
+
                     if !stats.patterns_by_severity.is_empty() {
                         println!("⚡ Patterns by Severity:");
                         for (severity, count) in &stats.patterns_by_severity {
@@ -1916,7 +1966,7 @@ async fn handle_patterns_command(command: PatternCommands) -> Result<()> {
                         }
                         println!();
                     }
-                    
+
                     if !stats.most_active_patterns.is_empty() {
                         println!("🏆 Most Active Patterns:");
                         for (name, detections) in stats.most_active_patterns.iter().take(5) {
@@ -1928,30 +1978,38 @@ async fn handle_patterns_command(command: PatternCommands) -> Result<()> {
                     println!("{}", serde_json::to_string_pretty(&stats).unwrap());
                 }
                 _ => {
-                    println!("❌ Format {} not supported for pattern statistics", format as u8);
+                    println!(
+                        "❌ Format {} not supported for pattern statistics",
+                        format as u8
+                    );
                 }
             }
-            
+
             Ok(())
         }
 
-        PatternCommands::Delete { pattern_id, confirm } => {
+        PatternCommands::Delete {
+            pattern_id: _,
+            confirm,
+        } => {
             if !confirm {
                 println!("❌ Pattern deletion requires --confirm flag for safety");
                 return Ok(());
             }
-            
+
             println!("🚧 Pattern deletion not yet implemented");
-            println!("💡 For now, manually edit the learned-patterns.yaml files in .sniff/patterns/");
+            println!(
+                "💡 For now, manually edit the learned-patterns.yaml files in .sniff/patterns/"
+            );
             Ok(())
         }
 
         PatternCommands::Export { language, output } => {
-            let current_dir = std::env::current_dir()
-                .map_err(|e| SniffError::file_system(".", e))?;
-            
+            let current_dir =
+                std::env::current_dir().map_err(|e| SniffError::file_system(".", e))?;
+
             let manager = PatternLearningManager::new(&current_dir)?;
-            
+
             let supported_language = match language.to_lowercase().as_str() {
                 "rust" => SupportedLanguage::Rust,
                 "python" => SupportedLanguage::Python,
@@ -1965,22 +2023,27 @@ async fn handle_patterns_command(command: PatternCommands) -> Result<()> {
                     return Ok(());
                 }
             };
-            
+
             if let Some(playbook) = manager.to_playbook(supported_language) {
-                let yaml_content = serde_yaml::to_string(&playbook)
-                    .map_err(|e| SniffError::invalid_format("YAML export".to_string(), e.to_string()))?;
-                
+                let yaml_content = serde_yaml::to_string(&playbook).map_err(|e| {
+                    SniffError::invalid_format("YAML export".to_string(), e.to_string())
+                })?;
+
                 if let Some(output_path) = output {
                     std::fs::write(&output_path, yaml_content)
                         .map_err(|e| SniffError::file_system(&output_path, e))?;
-                    println!("✅ Exported {} patterns to: {}", language, output_path.display());
+                    println!(
+                        "✅ Exported {} patterns to: {}",
+                        language,
+                        output_path.display()
+                    );
                 } else {
                     println!("{}", yaml_content);
                 }
             } else {
                 println!("📝 No learned patterns found for {}", language);
             }
-            
+
             Ok(())
         }
 
@@ -1993,6 +2056,7 @@ async fn handle_patterns_command(command: PatternCommands) -> Result<()> {
 }
 
 /// Handles the analyze-files command - analyzes arbitrary files for bullshit patterns.
+#[allow(clippy::too_many_arguments)]
 async fn handle_analyze_files_command(
     paths: Vec<PathBuf>,
     format: OutputFormat,
@@ -2006,14 +2070,16 @@ async fn handle_analyze_files_command(
     checkpoint: Option<String>,
     diff_checkpoint: Option<String>,
 ) -> Result<()> {
-    use sniff::standalone::{StandaloneAnalyzer, AnalysisConfig, FileFilter, CheckpointManager};
     use sniff::analysis::BullshitAnalyzer;
+    use sniff::standalone::{AnalysisConfig, CheckpointManager, FileFilter, StandaloneAnalyzer};
 
     info!("🕵️  Starting standalone file analysis");
 
     // Configure file filter
     let allowed_extensions = extensions.map(|ext| {
-        ext.split(',').map(|e| e.trim().to_string()).collect::<Vec<_>>()
+        ext.split(',')
+            .map(|e| e.trim().to_string())
+            .collect::<Vec<_>>()
     });
 
     let filter = FileFilter {
@@ -2026,19 +2092,19 @@ async fn handle_analyze_files_command(
     // Create analysis config
     let config = AnalysisConfig {
         filter,
-        force_language: force_language.map(|lang| match lang.to_lowercase().as_str() {
-            "rust" => sniff::SupportedLanguage::Rust,
-            "python" => sniff::SupportedLanguage::Python,
-            "typescript" => sniff::SupportedLanguage::TypeScript,
-            "javascript" => sniff::SupportedLanguage::JavaScript,
-            "go" => sniff::SupportedLanguage::Go,
-            "c" => sniff::SupportedLanguage::C,
-            "cpp" => sniff::SupportedLanguage::Cpp,
+        force_language: force_language.and_then(|lang| match lang.to_lowercase().as_str() {
+            "rust" => Some(sniff::SupportedLanguage::Rust),
+            "python" => Some(sniff::SupportedLanguage::Python),
+            "typescript" => Some(sniff::SupportedLanguage::TypeScript),
+            "javascript" => Some(sniff::SupportedLanguage::JavaScript),
+            "go" => Some(sniff::SupportedLanguage::Go),
+            "c" => Some(sniff::SupportedLanguage::C),
+            "cpp" => Some(sniff::SupportedLanguage::Cpp),
             _ => {
                 warn!("Unknown language '{}', will auto-detect", lang);
-                return None;
+                None
             }
-        }).flatten(),
+        }),
         detailed_analysis: detailed,
     };
 
@@ -2048,43 +2114,55 @@ async fn handle_analyze_files_command(
 
     // Handle checkpoint comparison if requested
     if let Some(checkpoint_name) = diff_checkpoint {
-        let current_dir = std::env::current_dir()
-            .map_err(|e| SniffError::file_system(".", e))?;
+        let current_dir = std::env::current_dir().map_err(|e| SniffError::file_system(".", e))?;
         let checkpoint_manager = CheckpointManager::new(&current_dir)?;
-        
+
         info!("📊 Comparing against checkpoint: {}", checkpoint_name);
-        let comparison = checkpoint_manager.compare_files(&checkpoint_name, &paths).await?;
-        
+        let comparison = checkpoint_manager
+            .compare_files(&checkpoint_name, &paths)
+            .await?;
+
         // Analyze only changed files
-        let changed_files: Vec<PathBuf> = comparison.changed_files.into_iter()
-            .chain(comparison.new_files.into_iter())
+        let changed_files: Vec<PathBuf> = comparison
+            .changed_files
+            .clone()
+            .into_iter()
+            .chain(comparison.new_files.clone().into_iter())
             .collect();
-            
+
         if changed_files.is_empty() {
-            println!("✅ No changes detected since checkpoint '{}'", checkpoint_name);
+            println!(
+                "✅ No changes detected since checkpoint '{}'",
+                checkpoint_name
+            );
             return Ok(());
         }
-        
-        println!("📁 Analyzing {} changed files since checkpoint '{}'", 
-                changed_files.len(), checkpoint_name);
-                
+
+        println!(
+            "📁 Analyzing {} changed files since checkpoint '{}'",
+            changed_files.len(),
+            checkpoint_name
+        );
+
         let results = analyzer.analyze_files(&changed_files).await?;
         display_standalone_results(&results, format, detailed, Some(&comparison))?;
     } else {
         // Analyze specified files/directories
         let results = analyzer.analyze_files(&paths).await?;
-        
+
         // Create checkpoint if requested
         if let Some(checkpoint_name) = checkpoint {
-            let current_dir = std::env::current_dir()
-                .map_err(|e| SniffError::file_system(".", e))?;
+            let current_dir =
+                std::env::current_dir().map_err(|e| SniffError::file_system(".", e))?;
             let checkpoint_manager = CheckpointManager::new(&current_dir)?;
-            
+
             info!("📸 Creating checkpoint: {}", checkpoint_name);
-            checkpoint_manager.create_checkpoint(&checkpoint_name, &paths, None).await?;
+            checkpoint_manager
+                .create_checkpoint(&checkpoint_name, &paths, None)
+                .await?;
             println!("✅ Checkpoint '{}' created", checkpoint_name);
         }
-        
+
         display_standalone_results(&results, format, detailed, None)?;
     }
 
@@ -2103,20 +2181,29 @@ async fn handle_analyze_files_command(
 async fn handle_checkpoint_command(command: CheckpointCommands) -> Result<()> {
     use sniff::standalone::CheckpointManager;
 
-    let current_dir = std::env::current_dir()
-        .map_err(|e| SniffError::file_system(".", e))?;
+    let current_dir = std::env::current_dir().map_err(|e| SniffError::file_system(".", e))?;
     let checkpoint_manager = CheckpointManager::new(&current_dir)?;
 
     match command {
-        CheckpointCommands::Create { name, paths, description } => {
+        CheckpointCommands::Create {
+            name,
+            paths,
+            description,
+        } => {
             info!("📸 Creating checkpoint: {}", name);
-            checkpoint_manager.create_checkpoint(&name, &paths, description).await?;
-            println!("✅ Checkpoint '{}' created with {} files", name, paths.len());
+            checkpoint_manager
+                .create_checkpoint(&name, &paths, description)
+                .await?;
+            println!(
+                "✅ Checkpoint '{}' created with {} files",
+                name,
+                paths.len()
+            );
         }
 
         CheckpointCommands::List { format } => {
             let checkpoints = checkpoint_manager.list_checkpoints().await?;
-            
+
             if checkpoints.is_empty() {
                 println!("📝 No checkpoints found");
                 return Ok(());
@@ -2127,10 +2214,13 @@ async fn handle_checkpoint_command(command: CheckpointCommands) -> Result<()> {
                     println!("📸 Available Checkpoints");
                     println!("════════════════════════");
                     println!();
-                    
+
                     for checkpoint in checkpoints {
                         println!("🏷️  {}", checkpoint.name);
-                        println!("   Created: {}", checkpoint.timestamp.format("%Y-%m-%d %H:%M:%S"));
+                        println!(
+                            "   Created: {}",
+                            checkpoint.timestamp.format("%Y-%m-%d %H:%M:%S")
+                        );
                         println!("   Files: {}", checkpoint.file_count);
                         if let Some(desc) = checkpoint.description {
                             println!("   Description: {}", desc);
@@ -2143,8 +2233,9 @@ async fn handle_checkpoint_command(command: CheckpointCommands) -> Result<()> {
                 }
                 _ => {
                     for checkpoint in checkpoints {
-                        println!("{}: {} files ({})", 
-                            checkpoint.name, 
+                        println!(
+                            "{}: {} files ({})",
+                            checkpoint.name,
                             checkpoint.file_count,
                             checkpoint.timestamp.format("%Y-%m-%d %H:%M")
                         );
@@ -2156,7 +2247,10 @@ async fn handle_checkpoint_command(command: CheckpointCommands) -> Result<()> {
         CheckpointCommands::Show { name, format: _ } => {
             if let Some(checkpoint) = checkpoint_manager.get_checkpoint(&name).await? {
                 println!("📸 Checkpoint: {}", checkpoint.name);
-                println!("Created: {}", checkpoint.timestamp.format("%Y-%m-%d %H:%M:%S"));
+                println!(
+                    "Created: {}",
+                    checkpoint.timestamp.format("%Y-%m-%d %H:%M:%S")
+                );
                 println!("Files: {}", checkpoint.file_count);
                 if let Some(desc) = checkpoint.description {
                     println!("Description: {}", desc);
@@ -2172,20 +2266,26 @@ async fn handle_checkpoint_command(command: CheckpointCommands) -> Result<()> {
             }
         }
 
-        CheckpointCommands::Diff { checkpoint, paths, format } => {
+        CheckpointCommands::Diff {
+            checkpoint,
+            paths,
+            format,
+        } => {
             let comparison_paths = paths.unwrap_or_else(|| {
                 // Get paths from checkpoint if not provided
                 vec![std::env::current_dir().unwrap()]
             });
-            
-            let comparison = checkpoint_manager.compare_files(&checkpoint, &comparison_paths).await?;
-            
+
+            let comparison = checkpoint_manager
+                .compare_files(&checkpoint, &comparison_paths)
+                .await?;
+
             match format {
                 OutputFormat::Table => {
                     println!("📊 Changes since checkpoint '{}'", checkpoint);
                     println!("═══════════════════════════════════");
                     println!();
-                    
+
                     if !comparison.new_files.is_empty() {
                         println!("📄 New files ({}): ", comparison.new_files.len());
                         for file in &comparison.new_files {
@@ -2193,7 +2293,7 @@ async fn handle_checkpoint_command(command: CheckpointCommands) -> Result<()> {
                         }
                         println!();
                     }
-                    
+
                     if !comparison.changed_files.is_empty() {
                         println!("📝 Modified files ({}): ", comparison.changed_files.len());
                         for file in &comparison.changed_files {
@@ -2201,7 +2301,7 @@ async fn handle_checkpoint_command(command: CheckpointCommands) -> Result<()> {
                         }
                         println!();
                     }
-                    
+
                     if !comparison.deleted_files.is_empty() {
                         println!("🗑️  Deleted files ({}): ", comparison.deleted_files.len());
                         for file in &comparison.deleted_files {
@@ -2209,8 +2309,11 @@ async fn handle_checkpoint_command(command: CheckpointCommands) -> Result<()> {
                         }
                         println!();
                     }
-                    
-                    if comparison.new_files.is_empty() && comparison.changed_files.is_empty() && comparison.deleted_files.is_empty() {
+
+                    if comparison.new_files.is_empty()
+                        && comparison.changed_files.is_empty()
+                        && comparison.deleted_files.is_empty()
+                    {
                         println!("✅ No changes detected since checkpoint");
                     }
                 }
@@ -2218,9 +2321,10 @@ async fn handle_checkpoint_command(command: CheckpointCommands) -> Result<()> {
                     println!("{}", serde_json::to_string_pretty(&comparison)?);
                 }
                 _ => {
-                    println!("Changes: +{} ~{} -{}", 
+                    println!(
+                        "Changes: +{} ~{} -{}",
                         comparison.new_files.len(),
-                        comparison.changed_files.len(), 
+                        comparison.changed_files.len(),
                         comparison.deleted_files.len()
                     );
                 }
@@ -2232,7 +2336,7 @@ async fn handle_checkpoint_command(command: CheckpointCommands) -> Result<()> {
                 println!("❌ Checkpoint deletion requires --confirm flag for safety");
                 return Ok(());
             }
-            
+
             checkpoint_manager.delete_checkpoint(&name).await?;
             println!("✅ Checkpoint '{}' deleted", name);
         }
@@ -2253,7 +2357,7 @@ fn display_standalone_results(
             println!("🕵️  Standalone File Analysis Results");
             println!("══════════════════════════════════════");
             println!();
-            
+
             if let Some(comp) = comparison {
                 println!("📊 Change Summary:");
                 println!("   New files: {}", comp.new_files.len());
@@ -2261,30 +2365,33 @@ fn display_standalone_results(
                 println!("   Deleted files: {}", comp.deleted_files.len());
                 println!();
             }
-            
+
             println!("📈 Analysis Summary:");
             println!("   Files analyzed: {}", results.total_files);
             println!("   Total patterns: {}", results.total_detections);
             println!("   Critical issues: {}", results.critical_issues);
             println!("   Average quality: {:.1}%", results.average_quality_score);
             println!();
-            
+
             if !results.file_results.is_empty() {
                 println!("📄 File Analysis:");
                 for file_result in &results.file_results {
                     if !file_result.detections.is_empty() {
-                        println!("   {} ({})", 
+                        println!(
+                            "   {} ({})",
                             file_result.file_path.display(),
                             file_result.language.map(|l| l.name()).unwrap_or("unknown")
                         );
-                        println!("      Issues: {} | Quality: {:.1}%", 
+                        println!(
+                            "      Issues: {} | Quality: {:.1}%",
                             file_result.detections.len(),
                             file_result.quality_score
                         );
-                        
+
                         if detailed {
                             for detection in &file_result.detections {
-                                println!("         {} {} ({}:{}): {}", 
+                                println!(
+                                    "         {} {} ({}:{}): {}",
                                     detection.severity.emoji(),
                                     detection.rule_name,
                                     detection.file_path,
@@ -2297,18 +2404,21 @@ fn display_standalone_results(
                     }
                 }
             }
-            
+
             if results.critical_issues > 0 {
-                println!("🚨 {} critical issues detected that require immediate attention", results.critical_issues);
+                println!(
+                    "🚨 {} critical issues detected that require immediate attention",
+                    results.critical_issues
+                );
             } else if results.total_detections == 0 {
                 println!("✅ No issues detected! Code quality looks excellent.");
             }
         }
-        
+
         OutputFormat::Json => {
             println!("{}", serde_json::to_string_pretty(results)?);
         }
-        
+
         OutputFormat::Markdown => {
             println!("# 🕵️ Standalone File Analysis Results");
             println!();
@@ -2319,9 +2429,12 @@ fn display_standalone_results(
             println!("| Files analyzed | {} |", results.total_files);
             println!("| Total patterns | {} |", results.total_detections);
             println!("| Critical issues | {} |", results.critical_issues);
-            println!("| Average quality | {:.1}% |", results.average_quality_score);
+            println!(
+                "| Average quality | {:.1}% |",
+                results.average_quality_score
+            );
             println!();
-            
+
             if !results.file_results.is_empty() {
                 println!("## File Analysis");
                 println!();
@@ -2329,16 +2442,20 @@ fn display_standalone_results(
                     if !file_result.detections.is_empty() {
                         println!("### `{}`", file_result.file_path.display());
                         println!();
-                        println!("- **Language**: {}", file_result.language.map(|l| l.name()).unwrap_or("unknown"));
+                        println!(
+                            "- **Language**: {}",
+                            file_result.language.map(|l| l.name()).unwrap_or("unknown")
+                        );
                         println!("- **Issues**: {}", file_result.detections.len());
                         println!("- **Quality**: {:.1}%", file_result.quality_score);
                         println!();
-                        
+
                         if detailed {
                             println!("#### Issues");
                             println!();
                             for detection in &file_result.detections {
-                                println!("- {} **{}** (line {}): `{}`", 
+                                println!(
+                                    "- {} **{}** (line {}): `{}`",
                                     detection.severity.emoji(),
                                     detection.rule_name,
                                     detection.line_number,
@@ -2351,11 +2468,12 @@ fn display_standalone_results(
                 }
             }
         }
-        
+
         OutputFormat::Compact => {
             for file_result in &results.file_results {
                 if !file_result.detections.is_empty() {
-                    println!("{}: {} issues, {:.1}% quality", 
+                    println!(
+                        "{}: {} issues, {:.1}% quality",
                         file_result.file_path.display(),
                         file_result.detections.len(),
                         file_result.quality_score
@@ -2364,6 +2482,6 @@ fn display_standalone_results(
             }
         }
     }
-    
+
     Ok(())
 }

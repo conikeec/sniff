@@ -238,56 +238,62 @@ impl BullshitDisplayFormatter {
         if let Some(context) = &detection.context_lines {
             return self.format_code_context(context, detection);
         }
-        
+
         // If no context available, try to extract from file
         if let Ok(file_content) = std::fs::read_to_string(&detection.file_path) {
             let lines: Vec<&str> = file_content.lines().collect();
             let target_line = detection.line_number.saturating_sub(1); // Convert to 0-based
-            
+
             if target_line < lines.len() {
                 // Extract context: 2 lines before and after
                 let start = target_line.saturating_sub(2);
                 let end = (target_line + 3).min(lines.len());
-                
-                let before: Vec<String> = lines[start..target_line].iter().map(|s| s.to_string()).collect();
+
+                let before: Vec<String> = lines[start..target_line]
+                    .iter()
+                    .map(|s| (*s).to_string())
+                    .collect();
                 let target = lines[target_line].to_string();
-                let after: Vec<String> = lines[target_line + 1..end].iter().map(|s| s.to_string()).collect();
-                
+                let after: Vec<String> = lines[target_line + 1..end]
+                    .iter()
+                    .map(|s| (*s).to_string())
+                    .collect();
+
                 let context = ContextLines {
                     before,
                     target,
                     after,
                     start_line: start + 1, // Convert back to 1-based
                 };
-                
+
                 return self.format_code_context(&context, detection);
             }
         }
-        
+
         // Fallback: simple box format
         let trimmed = detection.code_snippet.trim();
         let term_width = self.get_current_terminal_width();
         let box_width = term_width.saturating_sub(6).min(80);
-        
+
         let top_border = if self.use_colors {
             format!("   ┌{}┐", "─".repeat(box_width.saturating_sub(2)).dimmed())
         } else {
             format!("   ┌{}┐", "─".repeat(box_width.saturating_sub(2)))
         };
-        
+
         let bottom_border = if self.use_colors {
             format!("   └{}┘", "─".repeat(box_width.saturating_sub(2)).dimmed())
         } else {
             format!("   └{}┘", "─".repeat(box_width.saturating_sub(2)))
         };
-        
+
         let code_line = if self.use_colors {
             format!("   │ {} │", trimmed.yellow())
         } else {
-            format!("   │ {} │", trimmed)
+            format!("   │ {trimmed} │")
         };
-        
-        format!("{}\n{}\n{}", top_border, code_line, bottom_border)
+
+        format!("{top_border}\n{code_line}\n{bottom_border}")
     }
 
     /// Formats the description and any recommendations.
@@ -458,12 +464,12 @@ impl BullshitDisplayFormatter {
     /// Compact format for medium terminals (60-100 chars).
     fn format_detections_compact(&self, detections: &[BullshitDetection]) -> String {
         let mut output = String::new();
-        
+
         for detection in detections {
             output.push_str(&self.format_detection_beautiful(detection));
             output.push('\n');
         }
-        
+
         output
     }
 
@@ -481,11 +487,7 @@ impl BullshitDisplayFormatter {
                 detection.rule_name.bold()
             ));
         } else {
-            output.push_str(&format!(
-                "{}  {}\n",
-                severity_label,
-                detection.rule_name
-            ));
+            output.push_str(&format!("{}  {}\n", severity_label, detection.rule_name));
         }
 
         // File location
@@ -558,7 +560,6 @@ impl BullshitDisplayFormatter {
 
         output
     }
-
 
     /// Creates a summary tree view for very narrow terminals.
     #[must_use]

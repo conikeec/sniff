@@ -33,7 +33,7 @@ pub struct AnalysisConfig {
 pub struct FileFilter {
     /// Include hidden files and directories.
     pub include_hidden: bool,
-    /// Allowed file extensions (e.g., ["rs", "py", "ts"]).
+    /// Allowed file extensions (e.g., `["rs", "py", "ts"]`).
     pub allowed_extensions: Option<Vec<String>>,
     /// Pattern to exclude files (glob pattern).
     pub exclude_pattern: Option<String>,
@@ -61,6 +61,7 @@ pub struct StandaloneAnalyzer {
 
 impl StandaloneAnalyzer {
     /// Creates a new standalone analyzer.
+    #[must_use]
     pub fn new(bullshit_analyzer: BullshitAnalyzer, config: AnalysisConfig) -> Self {
         Self {
             bullshit_analyzer,
@@ -83,7 +84,10 @@ impl StandaloneAnalyzer {
                 let dir_files = self.discover_files_in_directory(path).await?;
                 discovered_files.extend(dir_files);
             } else {
-                warn!("Path does not exist or is not accessible: {}", path.display());
+                warn!(
+                    "Path does not exist or is not accessible: {}",
+                    path.display()
+                );
             }
         }
 
@@ -103,7 +107,9 @@ impl StandaloneAnalyzer {
             match self.analyze_single_file(&file_path).await {
                 Ok(result) => {
                     total_detections += result.detections.len();
-                    critical_issues += result.detections.iter()
+                    critical_issues += result
+                        .detections
+                        .iter()
                         .filter(|d| matches!(d.severity, crate::playbook::Severity::Critical))
                         .count();
                     quality_scores.push(result.quality_score);
@@ -135,7 +141,8 @@ impl StandaloneAnalyzer {
         debug!("Analyzing file: {}", file_path.display());
 
         // Read file content
-        let content = fs::read_to_string(file_path).await
+        let content = fs::read_to_string(file_path)
+            .await
             .map_err(|e| SniffError::file_system(file_path, e))?;
 
         // Detect or use forced language
@@ -146,7 +153,10 @@ impl StandaloneAnalyzer {
         };
 
         if language.is_none() {
-            debug!("Unknown language for file: {}, skipping", file_path.display());
+            debug!(
+                "Unknown language for file: {}, skipping",
+                file_path.display()
+            );
             return Ok(FileAnalysisResult {
                 file_path: file_path.to_path_buf(),
                 language: None,
@@ -158,12 +168,15 @@ impl StandaloneAnalyzer {
 
         let lang = language.unwrap();
 
+        // Create a temporary file for analysis since BullshitAnalyzer works with files
+        let temp_file =
+            tempfile::NamedTempFile::new().map_err(|e| SniffError::file_system(file_path, e))?;
+
+        std::fs::write(temp_file.path(), &content)
+            .map_err(|e| SniffError::file_system(file_path, e))?;
+
         // Analyze content for bullshit patterns
-        let detections = self.bullshit_analyzer.analyze_content_for_language(
-            &content,
-            lang,
-            file_path.to_str().unwrap_or("unknown"),
-        )?;
+        let detections = self.bullshit_analyzer.analyze_file(temp_file.path())?;
 
         // Calculate quality score
         let quality_score = self.calculate_quality_score(&detections);
@@ -195,14 +208,17 @@ impl StandaloneAnalyzer {
         let mut stack = vec![dir_path.to_path_buf()];
 
         while let Some(current_dir) = stack.pop() {
-            let mut entries = fs::read_dir(&current_dir).await
+            let mut entries = fs::read_dir(&current_dir)
+                .await
                 .map_err(|e| SniffError::file_system(&current_dir, e))?;
 
-            while let Some(entry) = entries.next_entry().await
-                .map_err(|e| SniffError::file_system(&current_dir, e))? {
-                
+            while let Some(entry) = entries
+                .next_entry()
+                .await
+                .map_err(|e| SniffError::file_system(&current_dir, e))?
+            {
                 let path = entry.path();
-                
+
                 // Skip hidden files/directories unless configured to include them
                 if !self.config.filter.include_hidden {
                     if let Some(file_name) = path.file_name() {
@@ -228,8 +244,11 @@ impl StandaloneAnalyzer {
         // Check file size
         if let Ok(metadata) = fs::metadata(file_path).await {
             if metadata.len() > self.config.filter.max_file_size_bytes {
-                debug!("Skipping large file: {} ({} bytes)", 
-                    file_path.display(), metadata.len());
+                debug!(
+                    "Skipping large file: {} ({} bytes)",
+                    file_path.display(),
+                    metadata.len()
+                );
                 return Ok(false);
             }
         }
@@ -238,7 +257,10 @@ impl StandaloneAnalyzer {
         if let Some(ref allowed_extensions) = self.config.filter.allowed_extensions {
             if let Some(extension) = file_path.extension() {
                 let ext_str = extension.to_string_lossy().to_lowercase();
-                if !allowed_extensions.iter().any(|allowed| allowed.to_lowercase() == ext_str) {
+                if !allowed_extensions
+                    .iter()
+                    .any(|allowed| allowed.to_lowercase() == ext_str)
+                {
                     return Ok(false);
                 }
             } else {
@@ -251,8 +273,11 @@ impl StandaloneAnalyzer {
         if let Some(ref exclude_pattern) = self.config.filter.exclude_pattern {
             let path_str = file_path.to_string_lossy();
             if path_str.contains(exclude_pattern) {
-                debug!("Excluding file matching pattern '{}': {}", 
-                    exclude_pattern, file_path.display());
+                debug!(
+                    "Excluding file matching pattern '{}': {}",
+                    exclude_pattern,
+                    file_path.display()
+                );
                 return Ok(false);
             }
         }
@@ -277,35 +302,42 @@ impl StandaloneAnalyzer {
             };
         }
 
-        (100.0 - penalty).max(0.0)
+        (100.0_f64 - penalty).max(0.0)
     }
 
     /// Calculates basic complexity metrics for a file.
-    fn calculate_complexity_metrics(&self, content: &str, _language: SupportedLanguage) -> ComplexityMetrics {
+    fn calculate_complexity_metrics(
+        &self,
+        content: &str,
+        _language: SupportedLanguage,
+    ) -> ComplexityMetrics {
         // Simple metrics - could be enhanced with proper AST analysis
         let lines = content.lines().collect::<Vec<_>>();
         let non_empty_lines = lines.iter().filter(|line| !line.trim().is_empty()).count();
-        let comment_lines = lines.iter().filter(|line| {
-            let trimmed = line.trim();
-            trimmed.starts_with("//") || trimmed.starts_with('#') || trimmed.starts_with("/*")
-        }).count();
-        
+        let comment_lines = lines
+            .iter()
+            .filter(|line| {
+                let trimmed = line.trim();
+                trimmed.starts_with("//") || trimmed.starts_with('#') || trimmed.starts_with("/*")
+            })
+            .count();
+
         ComplexityMetrics {
             cyclomatic_complexity: 1, // Placeholder
             nesting_depth: self.calculate_max_nesting_depth(content),
             function_count: self.count_functions(content),
-            comment_ratio: if non_empty_lines > 0 { 
-                comment_lines as f64 / non_empty_lines as f64 
-            } else { 
-                0.0 
+            comment_ratio: if non_empty_lines > 0 {
+                comment_lines as f64 / non_empty_lines as f64
+            } else {
+                0.0
             },
         }
     }
 
     fn calculate_max_nesting_depth(&self, content: &str) -> usize {
-        let mut max_depth = 0;
-        let mut current_depth = 0;
-        
+        let mut max_depth = 0usize;
+        let mut current_depth = 0usize;
+
         for line in content.lines() {
             let trimmed = line.trim();
             // Simple heuristic - count braces (works for C-like languages)
@@ -318,19 +350,22 @@ impl StandaloneAnalyzer {
             }
             max_depth = max_depth.max(current_depth);
         }
-        
+
         max_depth
     }
 
     fn count_functions(&self, content: &str) -> usize {
         // Simple heuristic - count function-like patterns
-        content.lines().filter(|line| {
-            let trimmed = line.trim();
-            trimmed.contains("fn ") || 
-            trimmed.contains("def ") || 
-            trimmed.contains("function ") ||
-            (trimmed.contains("(") && trimmed.contains(")") && trimmed.contains("{"))
-        }).count()
+        content
+            .lines()
+            .filter(|line| {
+                let trimmed = line.trim();
+                trimmed.contains("fn ")
+                    || trimmed.contains("def ")
+                    || trimmed.contains("function ")
+                    || (trimmed.contains('(') && trimmed.contains(')') && trimmed.contains('{'))
+            })
+            .count()
     }
 }
 
@@ -342,7 +377,7 @@ struct LanguageDetector {
 impl LanguageDetector {
     fn new() -> Self {
         let mut extension_map = HashMap::new();
-        
+
         extension_map.insert("rs".to_string(), SupportedLanguage::Rust);
         extension_map.insert("py".to_string(), SupportedLanguage::Python);
         extension_map.insert("pyw".to_string(), SupportedLanguage::Python);
@@ -364,7 +399,7 @@ impl LanguageDetector {
     fn detect_from_path(&self, path: &Path) -> Option<SupportedLanguage> {
         path.extension()
             .and_then(|ext| ext.to_str())
-            .map(|ext| ext.to_lowercase())
+            .map(str::to_lowercase)
             .and_then(|ext| self.extension_map.get(&ext))
             .copied()
     }
@@ -440,6 +475,7 @@ pub struct ComplexityMetrics {
 
 /// Checkpoint management for tracking file changes over time.
 pub struct CheckpointManager {
+    #[allow(dead_code)]
     project_dir: PathBuf,
     checkpoint_dir: PathBuf,
 }
@@ -448,7 +484,7 @@ impl CheckpointManager {
     /// Creates a new checkpoint manager for the given project directory.
     pub fn new(project_dir: &Path) -> Result<Self> {
         let checkpoint_dir = project_dir.join(".sniff/checkpoints");
-        
+
         Ok(Self {
             project_dir: project_dir.to_path_buf(),
             checkpoint_dir,
@@ -463,7 +499,8 @@ impl CheckpointManager {
         description: Option<String>,
     ) -> Result<()> {
         // Ensure checkpoint directory exists
-        fs::create_dir_all(&self.checkpoint_dir).await
+        fs::create_dir_all(&self.checkpoint_dir)
+            .await
             .map_err(|e| SniffError::file_system(&self.checkpoint_dir, e))?;
 
         let checkpoint = Checkpoint {
@@ -474,7 +511,7 @@ impl CheckpointManager {
             files: HashMap::new(),
         };
 
-        let checkpoint_file = self.checkpoint_dir.join(format!("{}.json", name));
+        let checkpoint_file = self.checkpoint_dir.join(format!("{name}.json"));
         let mut file_snapshots = HashMap::new();
         let mut total_files = 0;
 
@@ -494,8 +531,9 @@ impl CheckpointManager {
         // Save checkpoint to file
         let checkpoint_json = serde_json::to_string_pretty(&final_checkpoint)
             .map_err(|e| SniffError::invalid_format("checkpoint".to_string(), e.to_string()))?;
-        
-        fs::write(&checkpoint_file, checkpoint_json).await
+
+        fs::write(&checkpoint_file, checkpoint_json)
+            .await
             .map_err(|e| SniffError::file_system(&checkpoint_file, e))?;
 
         info!("Created checkpoint '{}' with {} files", name, total_files);
@@ -509,14 +547,17 @@ impl CheckpointManager {
         }
 
         let mut checkpoints = Vec::new();
-        let mut entries = fs::read_dir(&self.checkpoint_dir).await
+        let mut entries = fs::read_dir(&self.checkpoint_dir)
+            .await
             .map_err(|e| SniffError::file_system(&self.checkpoint_dir, e))?;
 
-        while let Some(entry) = entries.next_entry().await
-            .map_err(|e| SniffError::file_system(&self.checkpoint_dir, e))? {
-            
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|e| SniffError::file_system(&self.checkpoint_dir, e))?
+        {
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "json") {
+            if path.extension().is_some_and(|ext| ext == "json") {
                 if let Some(name) = path.file_stem() {
                     if let Ok(checkpoint) = self.load_checkpoint(&name.to_string_lossy()).await {
                         checkpoints.push(CheckpointInfo {
@@ -567,25 +608,32 @@ impl CheckpointManager {
     }
 
     /// Compares current file state against a checkpoint.
-    pub async fn compare_files(&self, checkpoint_name: &str, paths: &[PathBuf]) -> Result<FileComparison> {
+    pub async fn compare_files(
+        &self,
+        checkpoint_name: &str,
+        paths: &[PathBuf],
+    ) -> Result<FileComparison> {
         let checkpoint = self.load_checkpoint(checkpoint_name).await?;
         let current_files = self.capture_file_states_flat(paths).await?;
 
         let checkpoint_paths: HashSet<_> = checkpoint.files.keys().cloned().collect();
         let current_paths: HashSet<_> = current_files.keys().cloned().collect();
 
-        let new_files: Vec<PathBuf> = current_paths.difference(&checkpoint_paths)
-            .map(|p| PathBuf::from(p))
+        let new_files: Vec<PathBuf> = current_paths
+            .difference(&checkpoint_paths)
+            .map(PathBuf::from)
             .collect();
-        
-        let deleted_files: Vec<PathBuf> = checkpoint_paths.difference(&current_paths)
-            .map(|p| PathBuf::from(p))
+
+        let deleted_files: Vec<PathBuf> = checkpoint_paths
+            .difference(&current_paths)
+            .map(PathBuf::from)
             .collect();
 
         let mut changed_files = Vec::new();
         for path_str in checkpoint_paths.intersection(&current_paths) {
-            if let (Some(checkpoint_snapshot), Some(current_snapshot)) = 
-                (checkpoint.files.get(path_str), current_files.get(path_str)) {
+            if let (Some(checkpoint_snapshot), Some(current_snapshot)) =
+                (checkpoint.files.get(path_str), current_files.get(path_str))
+            {
                 if checkpoint_snapshot.content_hash != current_snapshot.content_hash {
                     changed_files.push(PathBuf::from(path_str));
                 }
@@ -601,9 +649,10 @@ impl CheckpointManager {
 
     /// Deletes a checkpoint.
     pub async fn delete_checkpoint(&self, name: &str) -> Result<()> {
-        let checkpoint_file = self.checkpoint_dir.join(format!("{}.json", name));
+        let checkpoint_file = self.checkpoint_dir.join(format!("{name}.json"));
         if checkpoint_file.exists() {
-            fs::remove_file(&checkpoint_file).await
+            fs::remove_file(&checkpoint_file)
+                .await
                 .map_err(|e| SniffError::file_system(&checkpoint_file, e))?;
             info!("Deleted checkpoint '{}'", name);
         }
@@ -613,7 +662,7 @@ impl CheckpointManager {
     /// Captures the state of all files in the given paths.
     async fn capture_file_states(&self, path: &Path) -> Result<HashMap<String, FileSnapshot>> {
         let mut snapshots = HashMap::new();
-        
+
         if path.is_file() {
             if let Some(snapshot) = self.capture_single_file_state(path).await? {
                 snapshots.insert(path.to_string_lossy().to_string(), snapshot);
@@ -631,14 +680,17 @@ impl CheckpointManager {
     }
 
     /// Captures file states and returns a flat map.
-    async fn capture_file_states_flat(&self, paths: &[PathBuf]) -> Result<HashMap<String, FileSnapshot>> {
+    async fn capture_file_states_flat(
+        &self,
+        paths: &[PathBuf],
+    ) -> Result<HashMap<String, FileSnapshot>> {
         let mut all_snapshots = HashMap::new();
-        
+
         for path in paths {
             let snapshots = self.capture_file_states(path).await?;
             all_snapshots.extend(snapshots);
         }
-        
+
         Ok(all_snapshots)
     }
 
@@ -648,17 +700,20 @@ impl CheckpointManager {
             return Ok(None);
         }
 
-        let metadata = fs::metadata(file_path).await
+        let metadata = fs::metadata(file_path)
+            .await
             .map_err(|e| SniffError::file_system(file_path, e))?;
 
-        let content = fs::read(file_path).await
+        let content = fs::read(file_path)
+            .await
             .map_err(|e| SniffError::file_system(file_path, e))?;
 
         let content_hash = blake3::hash(&content);
 
         Ok(Some(FileSnapshot {
             size: metadata.len(),
-            modified_time: metadata.modified()
+            modified_time: metadata
+                .modified()
                 .map_err(|e| SniffError::file_system(file_path, e))?
                 .into(),
             content_hash: hex::encode(content_hash.as_bytes()),
@@ -671,16 +726,19 @@ impl CheckpointManager {
         let mut stack = vec![dir_path.to_path_buf()];
 
         while let Some(current_dir) = stack.pop() {
-            let mut entries = fs::read_dir(&current_dir).await
+            let mut entries = fs::read_dir(&current_dir)
+                .await
                 .map_err(|e| SniffError::file_system(&current_dir, e))?;
 
-            while let Some(entry) = entries.next_entry().await
-                .map_err(|e| SniffError::file_system(&current_dir, e))? {
-                
+            while let Some(entry) = entries
+                .next_entry()
+                .await
+                .map_err(|e| SniffError::file_system(&current_dir, e))?
+            {
                 let path = entry.path();
-                
+
                 // Skip .sniff directory to avoid recursion
-                if path.file_name().map_or(false, |name| name == ".sniff") {
+                if path.file_name().is_some_and(|name| name == ".sniff") {
                     continue;
                 }
 
@@ -697,13 +755,16 @@ impl CheckpointManager {
 
     /// Loads a checkpoint from disk.
     async fn load_checkpoint(&self, name: &str) -> Result<Checkpoint> {
-        let checkpoint_file = self.checkpoint_dir.join(format!("{}.json", name));
-        
+        let checkpoint_file = self.checkpoint_dir.join(format!("{name}.json"));
+
         if !checkpoint_file.exists() {
-            return Err(SniffError::not_found(format!("Checkpoint '{}' not found", name)));
+            return Err(SniffError::analysis_error(format!(
+                "Checkpoint '{name}' not found"
+            )));
         }
 
-        let content = fs::read_to_string(&checkpoint_file).await
+        let content = fs::read_to_string(&checkpoint_file)
+            .await
             .map_err(|e| SniffError::file_system(&checkpoint_file, e))?;
 
         let checkpoint: Checkpoint = serde_json::from_str(&content)
