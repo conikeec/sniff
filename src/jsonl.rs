@@ -6,7 +6,7 @@
 //! This module provides robust parsing of Claude Code JSONL session files,
 //! with comprehensive error handling and validation.
 
-use crate::error::{ClaudeTreeError, Result};
+use crate::error::{SniffError, Result};
 use crate::types::{ClaudeMessage, SessionId};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -90,7 +90,7 @@ impl JsonlParser {
         let path = path.as_ref();
         debug!("Parsing JSONL file: {}", path.display());
 
-        let file = File::open(path).map_err(|e| ClaudeTreeError::file_system(path, e))?;
+        let file = File::open(path).map_err(|e| SniffError::file_system(path, e))?;
 
         self.parse_reader(BufReader::new(file))
     }
@@ -116,7 +116,7 @@ impl JsonlParser {
                 break;
             }
 
-            let line = line.map_err(|e| ClaudeTreeError::file_system("reader", e))?;
+            let line = line.map_err(|e| SniffError::file_system("reader", e))?;
             lines_processed += 1;
 
             // Skip empty lines
@@ -127,18 +127,20 @@ impl JsonlParser {
             // Parse the JSON line
             match self.parse_line(&line, line_num) {
                 Ok(message) => {
-                    // Validate session consistency
-                    if let Some(ref existing_session) = session_id {
-                        if message.session_id() != existing_session {
-                            warnings.push(format!(
-                                "Session ID mismatch at line {}: expected '{}', found '{}'",
-                                line_num,
-                                existing_session,
-                                message.session_id()
-                            ));
+                    // Validate session consistency (only for messages that have session IDs)
+                    if let Some(msg_session_id) = message.session_id() {
+                        if let Some(ref existing_session) = session_id {
+                            if msg_session_id != existing_session {
+                                warnings.push(format!(
+                                    "Session ID mismatch at line {}: expected '{}', found '{}'",
+                                    line_num,
+                                    existing_session,
+                                    msg_session_id
+                                ));
+                            }
+                        } else {
+                            session_id = Some(msg_session_id.clone());
                         }
-                    } else {
-                        session_id = Some(message.session_id().clone());
                     }
 
                     messages.push(message);
@@ -178,7 +180,7 @@ impl JsonlParser {
 
     /// Parses a single JSONL line into a Claude message.
     fn parse_line(&self, line: &str, line_number: usize) -> Result<ClaudeMessage> {
-        serde_json::from_str(line).map_err(|e| ClaudeTreeError::jsonl_parse(line_number, e))
+        serde_json::from_str(line).map_err(|e| SniffError::jsonl_parse(line_number, e))
     }
 
     /// Validates the consistency of parsed messages.
@@ -192,43 +194,48 @@ impl JsonlParser {
             messages.len()
         );
 
-        // Check for duplicate UUIDs
+        // Check for duplicate UUIDs (only for messages that have UUIDs)
         let mut seen_uuids = std::collections::HashSet::new();
         for message in messages {
-            let uuid = message.uuid();
-            if !seen_uuids.insert(uuid.clone()) {
-                return Err(ClaudeTreeError::invalid_session(format!(
-                    "Duplicate message UUID: {uuid}"
-                )));
-            }
-        }
-
-        // Validate parent-child relationships
-        let uuid_set: std::collections::HashSet<_> =
-            messages.iter().map(|m| m.uuid().clone()).collect();
-
-        for message in messages {
-            if let Some(parent_uuid) = message.parent_uuid() {
-                if !uuid_set.contains(parent_uuid) {
-                    warnings.push(format!(
-                        "Message {} references non-existent parent: {}",
-                        message.uuid(),
-                        parent_uuid
-                    ));
+            if let Some(uuid) = message.uuid() {
+                if !seen_uuids.insert(uuid.clone()) {
+                    return Err(SniffError::invalid_session(format!(
+                        "Duplicate message UUID: {uuid}"
+                    )));
                 }
             }
         }
 
-        // Validate chronological ordering
+        // Validate parent-child relationships (only for messages with UUIDs)
+        let uuid_set: std::collections::HashSet<_> =
+            messages.iter().filter_map(|m| m.uuid()).cloned().collect();
+
+        for message in messages {
+            if let Some(parent_uuid) = message.parent_uuid() {
+                if !uuid_set.contains(parent_uuid) {
+                    if let Some(msg_uuid) = message.uuid() {
+                        warnings.push(format!(
+                            "Message {} references non-existent parent: {}",
+                            msg_uuid,
+                            parent_uuid
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Validate chronological ordering (only for messages with timestamps)
         for window in messages.windows(2) {
-            if window[0].timestamp() > window[1].timestamp() {
-                warnings.push(format!(
-                    "Messages not in chronological order: {} ({}) after {} ({})",
-                    window[0].uuid(),
-                    window[0].timestamp(),
-                    window[1].uuid(),
-                    window[1].timestamp()
-                ));
+            if let (Some(ts1), Some(ts2)) = (window[0].timestamp(), window[1].timestamp()) {
+                if ts1 > ts2 {
+                    warnings.push(format!(
+                        "Messages not in chronological order: {} ({}) after {} ({})",
+                        window[0].uuid().unwrap_or(&"<summary>".to_string()),
+                        ts1,
+                        window[1].uuid().unwrap_or(&"<summary>".to_string()),
+                        ts2
+                    ));
+                }
             }
         }
 
@@ -254,7 +261,7 @@ pub mod utils {
     /// Returns an error if the file cannot be read.
     pub fn count_lines(path: impl AsRef<Path>) -> Result<usize> {
         let content = fs::read_to_string(path.as_ref())
-            .map_err(|e| ClaudeTreeError::file_system(path.as_ref(), e))?;
+            .map_err(|e| SniffError::file_system(path.as_ref(), e))?;
 
         Ok(content.lines().count())
     }
@@ -278,20 +285,22 @@ pub mod utils {
     /// Returns an error if the file cannot be read or doesn't contain valid messages.
     pub fn extract_session_id(path: impl AsRef<Path>) -> Result<Option<SessionId>> {
         let file = File::open(path.as_ref())
-            .map_err(|e| ClaudeTreeError::file_system(path.as_ref(), e))?;
+            .map_err(|e| SniffError::file_system(path.as_ref(), e))?;
 
         let reader = BufReader::new(file);
 
         // Read just the first few lines to find session ID
         for line in reader.lines().take(5) {
-            let line = line.map_err(|e| ClaudeTreeError::file_system(path.as_ref(), e))?;
+            let line = line.map_err(|e| SniffError::file_system(path.as_ref(), e))?;
 
             if line.trim().is_empty() {
                 continue;
             }
 
             if let Ok(message) = serde_json::from_str::<ClaudeMessage>(&line) {
-                return Ok(Some(message.session_id().clone()));
+                if let Some(session_id) = message.session_id() {
+                    return Ok(Some(session_id.clone()));
+                }
             }
         }
 

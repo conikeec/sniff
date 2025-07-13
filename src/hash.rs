@@ -7,7 +7,7 @@
 //! including utilities for computing hashes of various data types and
 //! creating deterministic content hashes.
 
-use crate::error::{ClaudeTreeError, Result};
+use crate::error::{SniffError, Result};
 use blake3::{Hash, Hasher};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -48,13 +48,13 @@ impl Blake3Hash {
     /// Returns an error if the string is not valid hexadecimal or not 64 characters long.
     pub fn from_hex(hex_str: &str) -> Result<Self> {
         if hex_str.len() != 64 {
-            return Err(ClaudeTreeError::hash_computation(
+            return Err(SniffError::hash_computation(
                 "Hash hex string must be exactly 64 characters",
             ));
         }
 
         let bytes = hex::decode(hex_str).map_err(|e| {
-            ClaudeTreeError::hash_computation(format!("Invalid hex string: {e}"))
+            SniffError::hash_computation(format!("Invalid hex string: {e}"))
         })?;
 
         let mut hash_bytes = [0u8; 32];
@@ -116,7 +116,7 @@ impl HashUtils {
     /// Returns an error if the object cannot be serialized.
     pub fn hash_json<T: Serialize>(data: &T) -> Result<Blake3Hash> {
         let json_bytes = serde_json::to_vec(data).map_err(|e| {
-            ClaudeTreeError::hash_computation(format!("Failed to serialize for hashing: {e}"))
+            SniffError::hash_computation(format!("Failed to serialize for hashing: {e}"))
         })?;
         Ok(Self::hash_bytes(&json_bytes))
     }
@@ -166,7 +166,7 @@ impl HashUtils {
                 
                 hasher.update(b"CONTENT:");
                 let content_bytes = serde_json::to_vec(&user_msg.message.content)
-                    .map_err(|e| ClaudeTreeError::hash_computation(format!("Failed to serialize user message content: {e}")))?;
+                    .map_err(|e| SniffError::hash_computation(format!("Failed to serialize user message content: {e}")))?;
                 hasher.update(&content_bytes);
             }
             ClaudeMessage::Assistant(assistant_msg) => {
@@ -180,8 +180,14 @@ impl HashUtils {
                 
                 hasher.update(b"CONTENT:");
                 let content_bytes = serde_json::to_vec(&assistant_msg.message.content)
-                    .map_err(|e| ClaudeTreeError::hash_computation(format!("Failed to serialize assistant message content: {e}")))?;
+                    .map_err(|e| SniffError::hash_computation(format!("Failed to serialize assistant message content: {e}")))?;
                 hasher.update(&content_bytes);
+            }
+            ClaudeMessage::Summary(summary_msg) => {
+                hasher.update(b"SUMMARY:");
+                hasher.update(summary_msg.leaf_uuid.as_bytes());
+                hasher.update(b"CONTENT:");
+                hasher.update(summary_msg.summary.as_bytes());
             }
         }
         
@@ -206,7 +212,7 @@ impl HashUtils {
         
         // Hash operation type
         let op_type_bytes = serde_json::to_vec(&operation.operation_type)
-            .map_err(|e| ClaudeTreeError::hash_computation(format!("Failed to serialize operation type: {e}")))?;
+            .map_err(|e| SniffError::hash_computation(format!("Failed to serialize operation type: {e}")))?;
         hasher.update(&op_type_bytes);
         
         // Hash file paths

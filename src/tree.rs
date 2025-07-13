@@ -6,7 +6,7 @@
 //! This module provides a hierarchical Merkle tree structure for organizing
 //! and verifying Claude Code session data with cryptographic integrity.
 
-use crate::error::{ClaudeTreeError, Result};
+use crate::error::{SniffError, Result};
 use crate::hash::Blake3Hash;
 use crate::operations::Operation;
 use crate::types::{ClaudeMessage, MessageUuid, SessionId};
@@ -145,7 +145,7 @@ impl MerkleNode {
         
         // Hash node type
         let node_type_bytes = serde_json::to_vec(&self.node_type)
-            .map_err(|e| ClaudeTreeError::hash_computation(format!("Failed to serialize node type: {e}")))?;
+            .map_err(|e| SniffError::hash_computation(format!("Failed to serialize node type: {e}")))?;
         hasher.update(&node_type_bytes);
         
         // Hash children in sorted order
@@ -296,14 +296,14 @@ impl TreeBuilder {
         info!("Building session tree for session: {}", session_id);
         
         if messages.is_empty() {
-            return Err(ClaudeTreeError::invalid_session(
+            return Err(SniffError::invalid_session(
                 "Cannot build tree from empty message list",
             ));
         }
 
         // Determine session time bounds
-        let start_time = messages.first().unwrap().timestamp();
-        let end_time = messages.last().map(|m| m.timestamp());
+        let start_time = messages.first().and_then(|m| m.timestamp()).unwrap_or(Utc::now());
+        let end_time = messages.last().and_then(|m| m.timestamp());
 
         // Build message nodes
         let mut message_children = BTreeMap::new();
@@ -314,10 +314,12 @@ impl TreeBuilder {
             if let Some(ref content) = message_node.content {
                 total_content_size += content.len() as u64;
             }
-            message_children.insert(
-                message.uuid().clone(),
-                message_node.hash,
-            );
+            if let Some(uuid) = message.uuid() {
+                message_children.insert(
+                    uuid.clone(),
+                    message_node.hash,
+                );
+            }
             self.node_cache.insert(message_node.hash, message_node);
         }
 
@@ -379,8 +381,9 @@ impl TreeBuilder {
     /// Builds a message node from a Claude message.
     fn build_message_node(&self, message: &ClaudeMessage) -> Result<MerkleNode> {
         let content = if self.config.include_content {
+            // Use JSON serialization which is compatible with untagged enums
             let content_bytes = serde_json::to_vec(message)
-                .map_err(|e| ClaudeTreeError::hash_computation(format!("Failed to serialize message: {e}")))?;
+                .map_err(|e| SniffError::hash_computation(format!("Failed to serialize message: {e}")))?;
             Some(content_bytes)
         } else {
             None
@@ -394,11 +397,12 @@ impl TreeBuilder {
         };
 
         let node_type = NodeType::Message {
-            message_uuid: message.uuid().clone(),
-            timestamp: message.timestamp(),
+            message_uuid: message.uuid().unwrap_or(&"<summary>".to_string()).clone(),
+            timestamp: message.timestamp().unwrap_or(Utc::now()),
             role: match message {
                 crate::types::ClaudeMessage::User(_) => "user".to_string(),
                 crate::types::ClaudeMessage::Assistant(_) => "assistant".to_string(),
+                crate::types::ClaudeMessage::Summary(_) => "summary".to_string(),
             },
         };
 
@@ -415,7 +419,7 @@ impl TreeBuilder {
     fn build_operation_node(&self, operation: &Operation) -> Result<MerkleNode> {
         let content = if self.config.include_content {
             let content_bytes = serde_json::to_vec(operation)
-                .map_err(|e| ClaudeTreeError::hash_computation(format!("Failed to serialize operation: {e}")))?;
+                .map_err(|e| SniffError::hash_computation(format!("Failed to serialize operation: {e}")))?;
             Some(content_bytes)
         } else {
             None
@@ -465,7 +469,7 @@ impl TreeBuilder {
             // Extract session ID from node type
             let session_id = match &session_node.node_type {
                 NodeType::Session { session_id, .. } => session_id.clone(),
-                _ => return Err(ClaudeTreeError::invalid_session(
+                _ => return Err(SniffError::invalid_session(
                     "Expected session node type",
                 )),
             };
@@ -547,7 +551,7 @@ pub mod utils {
     pub fn validate_node(node: &MerkleNode) -> Result<()> {
         let computed_hash = node.compute_hash()?;
         if computed_hash != node.hash {
-            return Err(ClaudeTreeError::hash_computation(
+            return Err(SniffError::hash_computation(
                 format!("Node hash mismatch: expected {}, got {}", node.hash, computed_hash),
             ));
         }
@@ -619,6 +623,7 @@ mod tests {
             uuid: uuid.to_string(),
             parent_uuid: parent_uuid.map(|s| s.to_string()),
             is_sidechain: false,
+            is_meta: None,
             user_type: "external".to_string(),
             cwd: PathBuf::from("/test"),
             session_id: "test-session".to_string(),

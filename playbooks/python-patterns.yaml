@@ -1,0 +1,141 @@
+name: "Python Bullshit Detection Patterns"
+version: "1.0.0"
+language: "Python"
+author: "Sniff Core Team"
+description: "Comprehensive bullshit detection patterns for Python code"
+
+rules:
+  - id: "python_pass_only_function"
+    name: "Pass-Only Function"
+    description: "Function contains only 'pass' statement"
+    severity: "High"
+    pattern_type:
+      Regex:
+        pattern: "def\\s+\\w+\\([^)]*\\):\\s*pass"
+        flags: "m"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["placeholder", "incomplete"]
+    examples:
+      - "def do_something():\n    pass"
+      - "def calculate(x, y):\n    pass"
+    false_positives:
+      - "def abstract_method():\n    pass  # Abstract method"
+
+  - id: "python_not_implemented_error"
+    name: "NotImplementedError"
+    description: "Function raises NotImplementedError"
+    severity: "Critical"
+    pattern_type:
+      Regex:
+        pattern: "raise\\s+NotImplementedError"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["placeholder", "incomplete"]
+    examples:
+      - "raise NotImplementedError()"
+      - "raise NotImplementedError(\"TODO: implement this\")"
+    false_positives: []
+
+  - id: "python_todo_comment"
+    name: "TODO Comment"
+    description: "TODO, FIXME, or XXX comment in code"
+    severity: "Medium"
+    pattern_type:
+      Regex:
+        pattern: "(?i)#\\s*(TODO|FIXME|XXX|HACK):"
+        flags: "i"
+    scope: "Comments"
+    enabled: true
+    tags: ["todo", "incomplete"]
+    examples:
+      - "# TODO: implement this"
+      - "# FIXME: handle errors properly"
+      - "# XXX: this is a hack"
+    false_positives: []
+
+  - id: "python_return_none_placeholder"
+    name: "Return None Placeholder"
+    description: "Function returns None as placeholder"
+    severity: "Medium"
+    pattern_type:
+      Regex:
+        pattern: "return\\s+None\\s*#.*(?:TODO|FIXME|placeholder)"
+        flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["placeholder", "return"]
+    examples:
+      - "return None  # TODO: return actual value"
+      - "return None  # FIXME: implement calculation"
+    false_positives:
+      - "return None  # Valid None return"
+
+  - id: "python_placeholder_string"
+    name: "Placeholder String"
+    description: "Function returns placeholder string"
+    severity: "Medium"
+    pattern_type:
+      Regex:
+        pattern: "return\\s+[\"'](?:TODO|FIXME|placeholder|not implemented)[\"']"
+        flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["placeholder", "string"]
+    examples:
+      - "return \"TODO: implement this\""
+      - "return 'not implemented'"
+    false_positives: []
+
+  - id: "python_empty_except_block"
+    name: "Empty Except Block"
+    description: "Exception handling with empty except block"
+    severity: "High"
+    pattern_type:
+      Regex:
+        pattern: "except[^:]*:\\s*pass"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["exception", "incomplete"]
+    examples:
+      - "except Exception:\n    pass"
+      - "except ValueError:\n    pass"
+    false_positives:
+      - "except KeyboardInterrupt:\n    pass  # Intentionally ignore"
+
+  - id: "python_assert_false_placeholder"
+    name: "Assert False Placeholder"
+    description: "Using assert False as placeholder implementation"
+    severity: "High"
+    pattern_type:
+      Regex:
+        pattern: "assert\\s+False\\s*,\\s*[\"'][^\"']*(?:TODO|FIXME|placeholder)[^\"']*[\"']"
+        flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["assert", "placeholder"]
+    examples:
+      - "assert False, \"TODO: implement this\""
+      - "assert False, \"placeholder\""
+    false_positives: []
+
+  - id: "python_print_debug_placeholder"
+    name: "Print Debug Placeholder"
+    description: "Print statements with TODO or placeholder messages"
+    severity: "Low"
+    pattern_type:
+      Regex:
+        pattern: "print\\s*\\([^)]*(?:TODO|FIXME|placeholder|debug)[^)]*\\)"
+        flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["debug", "placeholder"]
+    examples:
+      - "print(\"TODO: remove this debug\")"
+      - "print(\"placeholder output\")"
+    false_positives: []
+
+metadata:
+  created_at: "2025-01-13"
+  updated_at: "2025-01-13"
+  minimum_sniff_version: "0.1.0"

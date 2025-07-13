@@ -6,7 +6,7 @@
 //! This module provides a high-performance embedded database for storing
 //! Merkle tree nodes, session metadata, and search indices.
 
-use crate::error::{ClaudeTreeError, Result};
+use crate::error::{SniffError, Result};
 use crate::hash::Blake3Hash;
 use crate::tree::MerkleNode;
 use crate::types::SessionId;
@@ -54,7 +54,7 @@ pub struct StorageConfig {
 impl Default for StorageConfig {
     fn default() -> Self {
         Self {
-            db_path: PathBuf::from("claude-tree.redb"),
+            db_path: PathBuf::from("sniff.redb"),
             enable_compression: true,
             cache_size_bytes: 64 * 1024 * 1024, // 64MB
             enable_search_index: true,
@@ -115,6 +115,47 @@ impl CacheStats {
     }
 }
 
+/// Extracts a snippet around a search match for display.
+fn extract_snippet(text: &str, query: &str, max_length: usize) -> String {
+    let text_lower = text.to_lowercase();
+    let query_lower = query.to_lowercase();
+    
+    if let Some(match_pos) = text_lower.find(&query_lower) {
+        let start = match_pos.saturating_sub(max_length / 2);
+        let end = (match_pos + query.len() + max_length / 2).min(text.len());
+        
+        // Find character boundaries to avoid UTF-8 issues
+        let char_start = text.char_indices()
+            .find(|(idx, _)| *idx >= start)
+            .map(|(idx, _)| idx)
+            .unwrap_or(0);
+        let char_end = text.char_indices()
+            .find(|(idx, _)| *idx >= end)
+            .map(|(idx, _)| idx)
+            .unwrap_or(text.len());
+        
+        let mut snippet = text[char_start..char_end].to_string();
+        
+        // Add ellipsis if we truncated
+        if char_start > 0 {
+            snippet = format!("...{}", snippet);
+        }
+        if char_end < text.len() {
+            snippet = format!("{}...", snippet);
+        }
+        
+        snippet
+    } else {
+        // Fallback: just take the beginning of the text
+        if text.chars().count() > max_length {
+            let truncated: String = text.chars().take(max_length).collect();
+            format!("{}...", truncated)
+        } else {
+            text.to_string()
+        }
+    }
+}
+
 impl TreeStorage {
     /// Opens or creates a new database with the given configuration.
     ///
@@ -127,14 +168,14 @@ impl TreeStorage {
         // Ensure parent directory exists
         if let Some(parent) = config.db_path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
-                ClaudeTreeError::storage_error(format!(
+                SniffError::storage_error(format!(
                     "Failed to create database directory: {e}"
                 ))
             })?;
         }
 
         let db = Database::create(&config.db_path).map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to open database: {e}"))
+            SniffError::storage_error(format!("Failed to open database: {e}"))
         })?;
 
         let mut storage = Self {
@@ -159,36 +200,36 @@ impl TreeStorage {
     /// Initializes the database schema and tables.
     fn initialize_schema(&self) -> Result<()> {
         let write_txn = self.db.begin_write().map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to begin write transaction: {e}"))
+            SniffError::storage_error(format!("Failed to begin write transaction: {e}"))
         })?;
 
         // Create all tables
         write_txn.open_table(NODES_TABLE).map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to create nodes table: {e}"))
+            SniffError::storage_error(format!("Failed to create nodes table: {e}"))
         })?;
 
         write_txn.open_table(SESSION_INDEX).map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to create session index: {e}"))
+            SniffError::storage_error(format!("Failed to create session index: {e}"))
         })?;
 
         write_txn.open_table(PROJECT_INDEX).map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to create project index: {e}"))
+            SniffError::storage_error(format!("Failed to create project index: {e}"))
         })?;
 
         write_txn.open_table(METADATA_TABLE).map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to create metadata table: {e}"))
+            SniffError::storage_error(format!("Failed to create metadata table: {e}"))
         })?;
 
         write_txn.open_table(SEARCH_INDEX).map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to create search index: {e}"))
+            SniffError::storage_error(format!("Failed to create search index: {e}"))
         })?;
 
         write_txn.open_table(PARENT_CHILD_INDEX).map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to create parent-child index: {e}"))
+            SniffError::storage_error(format!("Failed to create parent-child index: {e}"))
         })?;
 
         write_txn.commit().map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to commit schema initialization: {e}"))
+            SniffError::storage_error(format!("Failed to commit schema initialization: {e}"))
         })?;
 
         // Store schema version
@@ -206,27 +247,27 @@ impl TreeStorage {
     pub fn store_node(&mut self, node: &MerkleNode) -> Result<()> {
         let node_bytes = if self.config.enable_compression {
             self.compress_data(&bincode::serialize(node).map_err(|e| {
-                ClaudeTreeError::storage_error(format!("Failed to serialize node: {e}"))
+                SniffError::storage_error(format!("Failed to serialize node: {e}"))
             })?)?
         } else {
             bincode::serialize(node).map_err(|e| {
-                ClaudeTreeError::storage_error(format!("Failed to serialize node: {e}"))
+                SniffError::storage_error(format!("Failed to serialize node: {e}"))
             })?
         };
 
         let write_txn = self.db.begin_write().map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to begin write transaction: {e}"))
+            SniffError::storage_error(format!("Failed to begin write transaction: {e}"))
         })?;
 
         {
             let mut table = write_txn.open_table(NODES_TABLE).map_err(|e| {
-                ClaudeTreeError::storage_error(format!("Failed to open nodes table: {e}"))
+                SniffError::storage_error(format!("Failed to open nodes table: {e}"))
             })?;
 
             table
                 .insert(node.hash.as_slice(), node_bytes.as_slice())
                 .map_err(|e| {
-                    ClaudeTreeError::storage_error(format!("Failed to insert node: {e}"))
+                    SniffError::storage_error(format!("Failed to insert node: {e}"))
                 })?;
         }
 
@@ -234,7 +275,7 @@ impl TreeStorage {
         self.update_parent_child_index(&write_txn, node)?;
 
         write_txn.commit().map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to commit node storage: {e}"))
+            SniffError::storage_error(format!("Failed to commit node storage: {e}"))
         })?;
 
         // Update cache
@@ -260,15 +301,15 @@ impl TreeStorage {
         self.cache_stats.misses += 1;
 
         let read_txn = self.db.begin_read().map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to begin read transaction: {e}"))
+            SniffError::storage_error(format!("Failed to begin read transaction: {e}"))
         })?;
 
         let table = read_txn.open_table(NODES_TABLE).map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to open nodes table: {e}"))
+            SniffError::storage_error(format!("Failed to open nodes table: {e}"))
         })?;
 
         let node_bytes = match table.get(hash.as_slice()).map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to get node: {e}"))
+            SniffError::storage_error(format!("Failed to get node: {e}"))
         })? {
             Some(bytes) => bytes.value().to_vec(),
             None => return Ok(None),
@@ -281,7 +322,7 @@ impl TreeStorage {
         };
 
         let node: MerkleNode = bincode::deserialize(&decompressed).map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to deserialize node: {e}"))
+            SniffError::storage_error(format!("Failed to deserialize node: {e}"))
         })?;
 
         // Update cache
@@ -299,23 +340,23 @@ impl TreeStorage {
     /// Returns an error if the index cannot be stored.
     pub fn index_session(&self, session_id: &SessionId, root_hash: &Blake3Hash) -> Result<()> {
         let write_txn = self.db.begin_write().map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to begin write transaction: {e}"))
+            SniffError::storage_error(format!("Failed to begin write transaction: {e}"))
         })?;
 
         {
             let mut table = write_txn.open_table(SESSION_INDEX).map_err(|e| {
-                ClaudeTreeError::storage_error(format!("Failed to open session index: {e}"))
+                SniffError::storage_error(format!("Failed to open session index: {e}"))
             })?;
 
             table
                 .insert(session_id.as_str(), root_hash.as_slice())
                 .map_err(|e| {
-                    ClaudeTreeError::storage_error(format!("Failed to index session: {e}"))
+                    SniffError::storage_error(format!("Failed to index session: {e}"))
                 })?;
         }
 
         write_txn.commit().map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to commit session index: {e}"))
+            SniffError::storage_error(format!("Failed to commit session index: {e}"))
         })?;
 
         debug!("Indexed session: {} -> {}", session_id, root_hash);
@@ -329,15 +370,15 @@ impl TreeStorage {
     /// Returns an error if the lookup fails.
     pub fn get_session_root(&self, session_id: &SessionId) -> Result<Option<Blake3Hash>> {
         let read_txn = self.db.begin_read().map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to begin read transaction: {e}"))
+            SniffError::storage_error(format!("Failed to begin read transaction: {e}"))
         })?;
 
         let table = read_txn.open_table(SESSION_INDEX).map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to open session index: {e}"))
+            SniffError::storage_error(format!("Failed to open session index: {e}"))
         })?;
 
         match table.get(session_id.as_str()).map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to get session root: {e}"))
+            SniffError::storage_error(format!("Failed to get session root: {e}"))
         })? {
             Some(hash_bytes) => {
                 let mut hash_array = [0u8; 32];
@@ -355,16 +396,16 @@ impl TreeStorage {
     /// Returns an error if the listing fails.
     pub fn list_sessions(&self) -> Result<Vec<SessionId>> {
         let read_txn = self.db.begin_read().map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to begin read transaction: {e}"))
+            SniffError::storage_error(format!("Failed to begin read transaction: {e}"))
         })?;
 
         let table = read_txn.open_table(SESSION_INDEX).map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to open session index: {e}"))
+            SniffError::storage_error(format!("Failed to open session index: {e}"))
         })?;
 
         let mut sessions = Vec::new();
         let mut iter = table.iter().map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to iterate sessions: {e}"))
+            SniffError::storage_error(format!("Failed to iterate sessions: {e}"))
         })?;
 
         while let Some(Ok((key, _))) = iter.next() {
@@ -381,31 +422,31 @@ impl TreeStorage {
     /// Returns an error if statistics cannot be computed.
     pub fn get_stats(&self) -> Result<DatabaseStats> {
         let read_txn = self.db.begin_read().map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to begin read transaction: {e}"))
+            SniffError::storage_error(format!("Failed to begin read transaction: {e}"))
         })?;
 
         // Count nodes
         let nodes_table = read_txn.open_table(NODES_TABLE).map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to open nodes table: {e}"))
+            SniffError::storage_error(format!("Failed to open nodes table: {e}"))
         })?;
         let total_nodes = nodes_table.len().map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to count nodes: {e}"))
+            SniffError::storage_error(format!("Failed to count nodes: {e}"))
         })? as usize;
 
         // Count sessions
         let session_table = read_txn.open_table(SESSION_INDEX).map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to open session index: {e}"))
+            SniffError::storage_error(format!("Failed to open session index: {e}"))
         })?;
         let total_sessions = session_table.len().map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to count sessions: {e}"))
+            SniffError::storage_error(format!("Failed to count sessions: {e}"))
         })? as usize;
 
         // Count projects
         let project_table = read_txn.open_table(PROJECT_INDEX).map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to open project index: {e}"))
+            SniffError::storage_error(format!("Failed to open project index: {e}"))
         })?;
         let total_projects = project_table.len().map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to count projects: {e}"))
+            SniffError::storage_error(format!("Failed to count projects: {e}"))
         })? as usize;
 
         // Get file size
@@ -432,7 +473,7 @@ impl TreeStorage {
         info!("Starting database compaction");
         
         self.db.compact().map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to compact database: {e}"))
+            SniffError::storage_error(format!("Failed to compact database: {e}"))
         })?;
 
         // Update compaction timestamp
@@ -449,28 +490,130 @@ impl TreeStorage {
         &self.cache_stats
     }
 
+    /// Searches through all indexed content for the given query.
+    ///
+    /// This is a basic implementation that searches through all sessions and
+    /// their message content. Returns session IDs that contain matching content.
+    pub fn search_content(&self, query: &str, limit: usize) -> Result<Vec<(String, Vec<String>)>> {
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+        
+        let query_lower = query.to_lowercase();
+        let mut results = Vec::new();
+        
+        let read_txn = self.db.begin_read().map_err(|e| {
+            SniffError::storage_error(format!("Failed to begin read transaction: {e}"))
+        })?;
+        
+        // Get all sessions
+        let session_table = read_txn.open_table(SESSION_INDEX).map_err(|e| {
+            SniffError::storage_error(format!("Failed to open session index: {e}"))
+        })?;
+        
+        let node_table = read_txn.open_table(NODES_TABLE).map_err(|e| {
+            SniffError::storage_error(format!("Failed to open node table: {e}"))
+        })?;
+        
+        // Search through each session
+        let mut _sessions_checked = 0;
+        let mut _nodes_checked = 0;
+        let mut _messages_with_content = 0;
+        let mut _content_chunks_checked = 0;
+        
+        for item in session_table.iter().map_err(|e| SniffError::storage_error(format!("Failed to iterate sessions: {e}")))? {
+            let (k, v) = item.map_err(|e| SniffError::storage_error(format!("Failed to read session entry: {e}")))?;
+            let session_id = k.value().to_string();
+            let hash_bytes = v.value();
+            _sessions_checked += 1;
+            
+            if hash_bytes.len() != 32 {
+                continue; // Skip invalid hashes
+            }
+            
+            let mut hash_array = [0u8; 32];
+            hash_array.copy_from_slice(hash_bytes);
+            let _session_hash = crate::hash::Blake3Hash::new(hash_array);
+            
+            let mut matching_snippets = Vec::new();
+            
+            // Get the session node data directly from the table
+            if let Some(session_data) = node_table.get(hash_bytes).map_err(|e| {
+                SniffError::storage_error(format!("Failed to read session node: {e}"))
+            })? {
+                // Deserialize the session node
+                if let Ok(session_node) = bincode::deserialize::<crate::tree::MerkleNode>(session_data.value()) {
+                    // Search through all child nodes (messages)
+                    for (_child_key, child_hash) in &session_node.children {
+                        _nodes_checked += 1;
+                        if let Some(message_data) = node_table.get(child_hash.as_bytes() as &[u8]).map_err(|e| {
+                            SniffError::storage_error(format!("Failed to read message node: {e}"))
+                        })? {
+                            if let Ok(message_node) = bincode::deserialize::<crate::tree::MerkleNode>(message_data.value()) {
+                                // Check if this is a message node and has content
+                                if matches!(message_node.node_type, crate::tree::NodeType::Message { .. }) {
+                                    if let Some(ref content_data) = message_node.content {
+                                        _messages_with_content += 1;
+                                        // Parse the content as a ClaudeMessage and extract text
+                                        match serde_json::from_slice::<crate::types::ClaudeMessage>(content_data) {
+                                            Ok(message) => {
+                                                let text_content = message.extract_all_text_content();
+                                                
+                                                for text in text_content {
+                                                    _content_chunks_checked += 1;
+                                                    if text.to_lowercase().contains(&query_lower) {
+                                                        // Extract a snippet around the match
+                                                        let snippet = extract_snippet(&text, query, 100);
+                                                        matching_snippets.push(snippet);
+                                                    }
+                                                }
+                                            }
+                                            Err(_e) => {
+                                                // Skip messages that can't be deserialized
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if !matching_snippets.is_empty() {
+                results.push((session_id, matching_snippets));
+                
+                if results.len() >= limit {
+                    break;
+                }
+            }
+        }
+        
+        Ok(results)
+    }
+
     /// Stores metadata in the database.
     fn store_metadata<T: Serialize>(&self, key: &str, value: &T) -> Result<()> {
         let value_bytes = bincode::serialize(value).map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to serialize metadata: {e}"))
+            SniffError::storage_error(format!("Failed to serialize metadata: {e}"))
         })?;
 
         let write_txn = self.db.begin_write().map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to begin write transaction: {e}"))
+            SniffError::storage_error(format!("Failed to begin write transaction: {e}"))
         })?;
 
         {
             let mut table = write_txn.open_table(METADATA_TABLE).map_err(|e| {
-                ClaudeTreeError::storage_error(format!("Failed to open metadata table: {e}"))
+                SniffError::storage_error(format!("Failed to open metadata table: {e}"))
             })?;
 
             table.insert(key, value_bytes.as_slice()).map_err(|e| {
-                ClaudeTreeError::storage_error(format!("Failed to store metadata: {e}"))
+                SniffError::storage_error(format!("Failed to store metadata: {e}"))
             })?;
         }
 
         write_txn.commit().map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to commit metadata: {e}"))
+            SniffError::storage_error(format!("Failed to commit metadata: {e}"))
         })?;
 
         Ok(())
@@ -483,18 +626,18 @@ impl TreeStorage {
         node: &MerkleNode,
     ) -> Result<()> {
         let mut table = write_txn.open_table(PARENT_CHILD_INDEX).map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to open parent-child index: {e}"))
+            SniffError::storage_error(format!("Failed to open parent-child index: {e}"))
         })?;
 
         // Store children for this node
         let children_data = bincode::serialize(&node.children).map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to serialize children: {e}"))
+            SniffError::storage_error(format!("Failed to serialize children: {e}"))
         })?;
 
         table
             .insert(node.hash.as_slice(), children_data.as_slice())
             .map_err(|e| {
-                ClaudeTreeError::storage_error(format!("Failed to update parent-child index: {e}"))
+                SniffError::storage_error(format!("Failed to update parent-child index: {e}"))
             })?;
 
         Ok(())
@@ -570,24 +713,24 @@ impl<'a> BatchWriter<'a> {
     /// Returns an error if the batch cannot be committed.
     pub fn commit(self) -> Result<()> {
         let write_txn = self.storage.db.begin_write().map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to begin batch write: {e}"))
+            SniffError::storage_error(format!("Failed to begin batch write: {e}"))
         })?;
 
         // Store all nodes
         {
             let mut nodes_table = write_txn.open_table(NODES_TABLE).map_err(|e| {
-                ClaudeTreeError::storage_error(format!("Failed to open nodes table: {e}"))
+                SniffError::storage_error(format!("Failed to open nodes table: {e}"))
             })?;
 
             for node in &self.nodes {
                 let node_bytes = bincode::serialize(node).map_err(|e| {
-                    ClaudeTreeError::storage_error(format!("Failed to serialize node: {e}"))
+                    SniffError::storage_error(format!("Failed to serialize node: {e}"))
                 })?;
 
                 nodes_table
                     .insert(node.hash.as_slice(), node_bytes.as_slice())
                     .map_err(|e| {
-                        ClaudeTreeError::storage_error(format!("Failed to insert node: {e}"))
+                        SniffError::storage_error(format!("Failed to insert node: {e}"))
                     })?;
             }
         }
@@ -595,20 +738,20 @@ impl<'a> BatchWriter<'a> {
         // Store session indices
         {
             let mut session_table = write_txn.open_table(SESSION_INDEX).map_err(|e| {
-                ClaudeTreeError::storage_error(format!("Failed to open session index: {e}"))
+                SniffError::storage_error(format!("Failed to open session index: {e}"))
             })?;
 
             for (session_id, root_hash) in &self.session_indices {
                 session_table
                     .insert(session_id.as_str(), root_hash.as_slice())
                     .map_err(|e| {
-                        ClaudeTreeError::storage_error(format!("Failed to index session: {e}"))
+                        SniffError::storage_error(format!("Failed to index session: {e}"))
                     })?;
             }
         }
 
         write_txn.commit().map_err(|e| {
-            ClaudeTreeError::storage_error(format!("Failed to commit batch: {e}"))
+            SniffError::storage_error(format!("Failed to commit batch: {e}"))
         })?;
 
         // Update cache with new nodes

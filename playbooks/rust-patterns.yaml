@@ -1,0 +1,140 @@
+name: "Rust Bullshit Detection Patterns"
+version: "1.0.0"
+language: "Rust"
+author: "Sniff Core Team"
+description: "Comprehensive bullshit detection patterns for Rust code"
+
+rules:
+  - id: "rust_unimplemented_macro"
+    name: "Unimplemented Macro"
+    description: "Function uses unimplemented!() macro"
+    severity: "Critical"
+    pattern_type:
+      Regex:
+        pattern: "unimplemented!\\(\\)"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["placeholder", "incomplete"]
+    examples:
+      - "fn do_something() { unimplemented!() }"
+      - "fn calculate() -> i32 { unimplemented!(\"pending math\") }"
+    false_positives: []
+
+  - id: "rust_todo_comment"
+    name: "TODO Comment"
+    description: "TODO, FIXME, or XXX comment in code"
+    severity: "Medium"
+    pattern_type:
+      Regex:
+        pattern: "(?i)//\\s*(TODO|FIXME|XXX|HACK):"
+        flags: "i"
+    scope: "Comments"
+    enabled: true
+    tags: ["todo", "incomplete"]
+    examples:
+      - "// TODO: implement this"
+      - "// FIXME: handle errors properly"
+      - "// XXX: this is a hack"
+    false_positives:
+      - "// TODO: This is in documentation"
+
+  - id: "rust_panic_with_todo"
+    name: "Panic with TODO"
+    description: "Function panics with TODO-related message"
+    severity: "High"
+    pattern_type:
+      Regex:
+        pattern: "panic!\\s*\\(\\s*\"[^\"]*(?:TODO|FIXME|XXX|placeholder|not implemented)[^\"]*\"\\s*\\)"
+        flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["panic", "placeholder"]
+    examples:
+      - "panic!(\"TODO: implement this\")"
+      - "panic!(\"Not implemented yet\")"
+    false_positives: []
+
+  - id: "rust_unwrap_without_context"
+    name: "Unwrap Without Context"
+    description: "Using unwrap() without proper error handling context"
+    severity: "Medium"
+    pattern_type:
+      Regex:
+        pattern: "\\.unwrap\\(\\)"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["error_handling", "unwrap"]
+    examples:
+      - "let value = result.unwrap();"
+      - "config.get(\"key\").unwrap()"
+    false_positives:
+      - "let value = result.unwrap(); // Safe: validated above"
+
+  - id: "rust_expect_with_placeholder"
+    name: "Expect with Placeholder"
+    description: "Using expect() with placeholder or TODO message"
+    severity: "High"
+    pattern_type:
+      Regex:
+        pattern: "\\.expect\\(\\s*\"[^\"]*(?:TODO|FIXME|placeholder|not implemented)[^\"]*\"\\s*\\)"
+        flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["expect", "placeholder"]
+    examples:
+      - "result.expect(\"TODO: handle this error\")"
+      - "value.expect(\"placeholder message\")"
+    false_positives: []
+
+  - id: "rust_empty_function_body"
+    name: "Empty Function Body"
+    description: "Function has completely empty body"
+    severity: "High"
+    pattern_type:
+      AstQuery:
+        query: |
+          (function_item
+            name: (identifier) @func_name
+            body: (block) @body
+            (#eq? @body ""))
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["empty", "incomplete"]
+    examples:
+      - "fn do_something() {}"
+    false_positives:
+      - "fn marker_function() {} // Intentionally empty marker"
+
+  - id: "rust_todo_panic"
+    name: "TODO Panic"
+    description: "Function panics with generic TODO message"
+    severity: "Critical"
+    pattern_type:
+      Regex:
+        pattern: "todo!\\(\\)"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["todo", "panic"]
+    examples:
+      - "fn incomplete() { todo!() }"
+    false_positives: []
+
+  - id: "rust_unreachable_as_placeholder"
+    name: "Unreachable as Placeholder"
+    description: "Using unreachable!() as a placeholder in reachable code"
+    severity: "High"
+    pattern_type:
+      Regex:
+        pattern: "unreachable!\\(\\s*\"[^\"]*(?:TODO|FIXME|placeholder)[^\"]*\"\\s*\\)"
+        flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["unreachable", "placeholder"]
+    examples:
+      - "unreachable!(\"TODO: implement this branch\")"
+    false_positives: []
+
+metadata:
+  created_at: "2025-01-13"
+  updated_at: "2025-01-13"
+  minimum_sniff_version: "0.1.0"

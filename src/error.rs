@@ -1,21 +1,21 @@
 // Copyright (c) 2025 Chetan Conikee <conikee@gmail.com>
 // Licensed under the MIT License
 
-//! Error handling for claude-tree.
+//! Error handling for sniff.
 //!
 //! This module provides comprehensive error types for all operations
-//! within the claude-tree application, from JSONL parsing to file
+//! within the sniff application, from JSONL parsing to file
 //! system operations and data processing.
 
 use std::path::PathBuf;
 use thiserror::Error;
 
-/// Result type alias for claude-tree operations.
-pub type Result<T> = std::result::Result<T, ClaudeTreeError>;
+/// Result type alias for sniff operations.
+pub type Result<T> = std::result::Result<T, SniffError>;
 
-/// Comprehensive error type for all claude-tree operations.
+/// Comprehensive error type for all sniff operations.
 #[derive(Error, Debug)]
-pub enum ClaudeTreeError {
+pub enum SniffError {
     /// Error occurred during JSONL parsing operations.
     #[error("JSONL parsing error at line {line}: {source}")]
     JsonlParse {
@@ -109,9 +109,23 @@ pub enum ClaudeTreeError {
         /// The reason for the storage failure.
         reason: String,
     },
+
+    /// Error occurred during language detection or TreeSitter parsing.
+    #[error("Language detection error: {reason}")]
+    LanguageDetection {
+        /// The reason for the language detection failure.
+        reason: String,
+    },
+
+    /// Error occurred during code analysis.
+    #[error("Code analysis error: {reason}")]
+    AnalysisError {
+        /// The reason for the analysis failure.
+        reason: String,
+    },
 }
 
-impl ClaudeTreeError {
+impl SniffError {
     /// Creates a new JSONL parsing error.
     pub fn jsonl_parse(line: usize, source: serde_json::Error) -> Self {
         Self::JsonlParse { line, source }
@@ -194,6 +208,38 @@ impl ClaudeTreeError {
             reason: reason.into(),
         }
     }
+
+    /// Creates a new language detection error.
+    pub fn language_detection(reason: impl Into<String>) -> Self {
+        Self::LanguageDetection {
+            reason: reason.into(),
+        }
+    }
+
+    /// Creates a new code analysis error.
+    pub fn analysis_error(reason: impl Into<String>) -> Self {
+        Self::AnalysisError {
+            reason: reason.into(),
+        }
+    }
+}
+
+// Automatic conversions from common error types
+impl From<serde_json::Error> for SniffError {
+    fn from(error: serde_json::Error) -> Self {
+        Self::InvalidFormat {
+            context: "JSON serialization/deserialization".to_string(),
+            reason: error.to_string(),
+        }
+    }
+}
+
+impl From<std::io::Error> for SniffError {
+    fn from(error: std::io::Error) -> Self {
+        Self::StorageError {
+            reason: format!("I/O operation failed: {error}"),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -205,28 +251,28 @@ mod tests {
     fn test_error_creation() {
         // Create a real JSON parsing error by parsing invalid JSON
         let json_error = serde_json::from_str::<serde_json::Value>("invalid json").unwrap_err();
-        let jsonl_error = ClaudeTreeError::jsonl_parse(42, json_error);
+        let jsonl_error = SniffError::jsonl_parse(42, json_error);
         assert!(matches!(
             jsonl_error,
-            ClaudeTreeError::JsonlParse { line: 42, .. }
+            SniffError::JsonlParse { line: 42, .. }
         ));
 
-        let fs_error = ClaudeTreeError::file_system(
+        let fs_error = SniffError::file_system(
             "/tmp/test",
             io::Error::new(io::ErrorKind::NotFound, "File not found"),
         );
-        assert!(matches!(fs_error, ClaudeTreeError::FileSystem { .. }));
+        assert!(matches!(fs_error, SniffError::FileSystem { .. }));
 
-        let session_error = ClaudeTreeError::invalid_session("Missing session ID");
+        let session_error = SniffError::invalid_session("Missing session ID");
         assert!(matches!(
             session_error,
-            ClaudeTreeError::InvalidSession { .. }
+            SniffError::InvalidSession { .. }
         ));
     }
 
     #[test]
     fn test_error_display() {
-        let error = ClaudeTreeError::missing_field("uuid", "message parsing");
+        let error = SniffError::missing_field("uuid", "message parsing");
         let error_str = error.to_string();
         assert!(error_str.contains("Missing required field 'uuid'"));
         assert!(error_str.contains("message parsing"));

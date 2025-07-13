@@ -1,12 +1,12 @@
 [package]
-name = "claude-tree"
+name = "sniff"
 version = "0.1.0"
 edition = "2021"
 authors = ["Chetan Conikee <conikee@gmail.com>"]
 license = "MIT"
-description = "Advanced CLI tool for navigating and searching Claude Code session histories"
-repository = "https://github.com/chetanconikee/claude-tree"
-keywords = ["cli", "claude", "sessions", "search", "merkle-tree"]
+description = "AI bullshit detector - sniff out incomplete code and false completion claims"
+repository = "https://github.com/chetanconikee/sniff"
+keywords = ["cli", "ai", "code-analysis", "bullshit-detector", "treesitter"]
 categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
@@ -35,12 +35,30 @@ hex = "0.4"
 redb = "2.1"
 bincode = "1.3"
 
-# CLI framework (for future use)
+# CLI framework
 clap = { version = "4.4", features = ["derive"] }
 
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Code analysis with rust-treesitter-agent-code-utility
+rust_tree_sitter = { git = "https://github.com/njfio/rust-treesitter-agent-code-utility.git", features = ["serde"] }
+
+# Pattern matching and regex
+regex = "1.10"
+once_cell = "1.19"
+
+# Parallel processing
+rayon = "1.8"
+
+# Enhanced terminal output
+colored = "2.1"
+console = "0.15"
+comfy-table = "7.1"
+
+# YAML for playbook definitions
+serde_yaml = "0.9"
 
 [dev-dependencies]
 tempfile = "3.8"

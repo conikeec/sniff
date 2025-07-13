@@ -6,7 +6,7 @@
 //! This module provides high-level interfaces for processing Claude Code
 //! session data, building Merkle trees, and storing results in the database.
 
-use crate::error::{ClaudeTreeError, Result};
+use crate::error::{SniffError, Result};
 use crate::hash::Blake3Hash;
 use crate::jsonl::JsonlParser;
 use crate::operations::{Operation, OperationExtractor};
@@ -132,7 +132,7 @@ impl SessionProcessor {
         
         if messages.is_empty() {
             warn!("No messages found in session file: {}", file_path.display());
-            return Err(ClaudeTreeError::invalid_session(
+            return Err(SniffError::invalid_session(
                 "Session file contains no messages",
             ));
         }
@@ -182,7 +182,7 @@ impl SessionProcessor {
         
         if session_files.is_empty() {
             warn!("No session files found in project: {}", project_path.display());
-            return Err(ClaudeTreeError::project_discovery(
+            return Err(SniffError::project_discovery(
                 project_path,
                 "No session files found",
             ));
@@ -204,7 +204,7 @@ impl SessionProcessor {
         }
 
         if session_root_hashes.is_empty() {
-            return Err(ClaudeTreeError::project_discovery(
+            return Err(SniffError::project_discovery(
                 project_path,
                 "No valid sessions were processed",
             ));
@@ -257,7 +257,7 @@ impl SessionProcessor {
             .and_then(|s| s.to_str())
             .map(String::from)
             .ok_or_else(|| {
-                ClaudeTreeError::invalid_session(format!(
+                SniffError::invalid_session(format!(
                     "Could not extract session ID from path: {}",
                     file_path.display()
                 ))
@@ -334,7 +334,7 @@ impl SessionProcessor {
             .max_depth(2) // Limit search depth
         {
             let entry = entry.map_err(|e| {
-                ClaudeTreeError::project_discovery(
+                SniffError::project_discovery(
                     project_path,
                     format!("Error walking directory: {e}"),
                 )
@@ -371,7 +371,7 @@ impl SessionProcessor {
             .and_then(|s| s.to_str())
             .map(String::from)
             .ok_or_else(|| {
-                ClaudeTreeError::project_discovery(
+                SniffError::project_discovery(
                     project_path,
                     "Could not extract project name from path",
                 )
@@ -390,19 +390,19 @@ pub mod utils {
     /// Returns an error if the file is not a valid session file.
     pub fn validate_session_file(file_path: &Path) -> Result<()> {
         if !file_path.exists() {
-            return Err(ClaudeTreeError::invalid_session(
+            return Err(SniffError::invalid_session(
                 format!("Session file does not exist: {}", file_path.display()),
             ));
         }
 
         if !file_path.is_file() {
-            return Err(ClaudeTreeError::invalid_session(
+            return Err(SniffError::invalid_session(
                 format!("Path is not a file: {}", file_path.display()),
             ));
         }
 
         if file_path.extension().map_or(true, |ext| ext != "jsonl") {
-            return Err(ClaudeTreeError::invalid_session(
+            return Err(SniffError::invalid_session(
                 "Session file must have .jsonl extension",
             ));
         }
@@ -423,7 +423,7 @@ pub mod utils {
 
         for entry in WalkDir::new(project_path).follow_links(false) {
             let entry = entry.map_err(|e| {
-                ClaudeTreeError::project_discovery(
+                SniffError::project_discovery(
                     project_path,
                     format!("Error walking directory: {e}"),
                 )

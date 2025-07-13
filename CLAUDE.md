@@ -4,15 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Claude Tree CLI is a Rust-based command-line tool for navigating and searching Claude Code session histories. It combines Merkle tree data structures with Tantivy full-text search to provide hierarchical navigation and cross-cutting queries across Claude Code projects and sessions.
+**Sniff** is a Rust-based AI bullshit detector that analyzes Claude Code session histories to identify incomplete implementations, false completion claims, and actual code quality. It uses TreeSitter code analysis and community-extensible playbooks to catch discrepancies between what Claude claims to complete and what actually exists in the codebase.
 
 ## Common Development Commands
 
 ### Building and Running
 ```bash
 cargo build                    # Build the project
-cargo run                      # Run the application
-cargo check                    # Quick syntax check
+cargo run                      # Run sniff
+sniff check                    # Detect bullshit in current session
+sniff report                   # Generate checkpoint report
 cargo test                     # Run tests
 cargo clippy                   # Run linter
 cargo fmt                      # Format code
