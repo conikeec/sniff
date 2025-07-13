@@ -55,6 +55,8 @@ pub struct SimpleSessionAnalyzer {
     bullshit_analyzer: BullshitAnalyzer,
     /// Display formatter for enhanced output
     display_formatter: BullshitDisplayFormatter,
+    /// Whether to suppress terminal output (for clean format export)
+    quiet_mode: bool,
 }
 
 impl SimpleSessionAnalyzer {
@@ -77,7 +79,29 @@ impl SimpleSessionAnalyzer {
             operation_extractor,
             bullshit_analyzer,
             display_formatter,
+            quiet_mode: false,
         })
+    }
+
+    /// Creates a new simple session analyzer with quiet mode.
+    pub fn new_quiet() -> Result<Self> {
+        let jsonl_parser = JsonlParser::new();
+        let operation_extractor = OperationExtractor::new();
+        let bullshit_analyzer = BullshitAnalyzer::new()?;
+        let display_formatter = BullshitDisplayFormatter::new();
+
+        Ok(Self {
+            jsonl_parser,
+            operation_extractor,
+            bullshit_analyzer,
+            display_formatter,
+            quiet_mode: true,
+        })
+    }
+
+    /// Sets quiet mode on/off.
+    pub fn set_quiet_mode(&mut self, quiet: bool) {
+        self.quiet_mode = quiet;
     }
 
     /// Analyzes a Claude Code session file.
@@ -89,24 +113,32 @@ impl SimpleSessionAnalyzer {
             .unwrap_or("unknown")
             .to_string();
 
-        println!("📄 Parsing session file: {}", session_file.display());
+        if !self.quiet_mode {
+            println!("📄 Parsing session file: {}", session_file.display());
+        }
 
         // Parse the JSONL session file
         let parse_result = self.jsonl_parser.parse_file(session_file)?;
         let messages = parse_result.messages;
-        println!("✅ Parsed {} messages", messages.len());
+        if !self.quiet_mode {
+            println!("✅ Parsed {} messages", messages.len());
+        }
 
         // Extract file operations from all messages
         let all_operations = self.operation_extractor.extract_operations(&messages)?;
 
-        println!("📁 Found {} file operations", all_operations.len());
+        if !self.quiet_mode {
+            println!("📁 Found {} file operations", all_operations.len());
+        }
 
         // Get ALL files mentioned in operations (don't filter yet)
         let all_mentioned_files = self.get_all_mentioned_files(&all_operations);
-        println!(
-            "🔍 Found {} files mentioned in operations",
-            all_mentioned_files.len()
-        );
+        if !self.quiet_mode {
+            println!(
+                "🔍 Found {} files mentioned in operations",
+                all_mentioned_files.len()
+            );
+        }
 
         // HONEST analysis: separate existing vs missing files
         let mut all_detections = Vec::new();
@@ -116,21 +148,29 @@ impl SimpleSessionAnalyzer {
 
         for file_path in &all_mentioned_files {
             let path = Path::new(file_path);
-            println!("🔍 Checking file: {file_path}");
-            println!("   Full path: {}", path.display());
-            println!("   Exists: {}", path.exists());
+            if !self.quiet_mode {
+                println!("🔍 Checking file: {file_path}");
+                println!("   Full path: {}", path.display());
+                println!("   Exists: {}", path.exists());
+            }
             if path.exists() {
                 existing_files.push(file_path.clone());
-                println!("   ✅ Added to existing files");
+                if !self.quiet_mode {
+                    println!("   ✅ Added to existing files");
+                }
             } else {
                 files_missing.push(file_path.clone());
-                println!("   ❌ Added to missing files");
+                if !self.quiet_mode {
+                    println!("   ❌ Added to missing files");
+                }
             }
         }
 
-        println!("📊 File Status:");
-        println!("   Files existing: {}", existing_files.len());
-        println!("   Files missing: {}", files_missing.len());
+        if !self.quiet_mode {
+            println!("📊 File Status:");
+            println!("   Files existing: {}", existing_files.len());
+            println!("   Files missing: {}", files_missing.len());
+        }
 
         // Convert file paths to absolute paths for analysis
         let mut absolute_paths = Vec::new();
@@ -150,10 +190,12 @@ impl SimpleSessionAnalyzer {
             absolute_paths.push(absolute_path);
         }
 
-        println!(
-            "🚀 Running parallel analysis on {} files...",
-            absolute_paths.len()
-        );
+        if !self.quiet_mode {
+            println!(
+                "🚀 Running parallel analysis on {} files...",
+                absolute_paths.len()
+            );
+        }
 
         // Use parallel analysis for better performance
         match self.analyze_files_parallel(&absolute_paths) {
@@ -161,31 +203,37 @@ impl SimpleSessionAnalyzer {
                 files_analyzed = absolute_paths.len();
                 all_detections = detections;
 
-                // Report results by file with adaptive formatting
-                for (i, file_path) in existing_files.iter().enumerate() {
-                    let absolute_path = &absolute_paths[i];
-                    let file_detections: Vec<_> = all_detections
-                        .iter()
-                        .filter(|d| d.file_path == absolute_path.to_string_lossy())
-                        .cloned()
-                        .collect();
+                // Report results by file with adaptive formatting (only in non-quiet mode)
+                if !self.quiet_mode {
+                    for (i, file_path) in existing_files.iter().enumerate() {
+                        let absolute_path = &absolute_paths[i];
+                        let file_detections: Vec<_> = all_detections
+                            .iter()
+                            .filter(|d| d.file_path == absolute_path.to_string_lossy())
+                            .cloned()
+                            .collect();
 
-                    // Use adaptive formatting based on terminal width
-                    print!(
-                        "{}",
-                        self.display_formatter
-                            .format_file_summary_adaptive(file_path, &file_detections)
-                    );
-                    println!(); // Add spacing between files
+                        // Use adaptive formatting based on terminal width
+                        print!(
+                            "{}",
+                            self.display_formatter
+                                .format_file_summary_adaptive(file_path, &file_detections)
+                        );
+                        println!(); // Add spacing between files
+                    }
                 }
             }
             Err(e) => {
-                println!("   ❌ Parallel analysis failed, falling back to sequential: {e}");
+                if !self.quiet_mode {
+                    println!("   ❌ Parallel analysis failed, falling back to sequential: {e}");
+                }
 
                 // Fallback to sequential analysis
                 for file_path in &existing_files {
                     let path = Path::new(file_path);
-                    println!("🔍 Analyzing file: {file_path}");
+                    if !self.quiet_mode {
+                        println!("🔍 Analyzing file: {file_path}");
+                    }
 
                     let absolute_path = if path.is_absolute() {
                         path.to_path_buf()
@@ -193,9 +241,11 @@ impl SimpleSessionAnalyzer {
                         match std::env::current_dir() {
                             Ok(cwd) => cwd.join(path),
                             Err(e) => {
-                                println!(
-                                    "   ❌ Failed to get current directory for {file_path}: {e}"
-                                );
+                                if !self.quiet_mode {
+                                    println!(
+                                        "   ❌ Failed to get current directory for {file_path}: {e}"
+                                    );
+                                }
                                 continue;
                             }
                         }
@@ -205,56 +255,62 @@ impl SimpleSessionAnalyzer {
                         Ok(detections) => {
                             files_analyzed += 1;
 
-                            // Use adaptive formatting based on terminal width
-                            print!(
-                                "{}",
-                                self.display_formatter
-                                    .format_file_summary_adaptive(file_path, &detections)
-                            );
-                            println!(); // Add spacing between files
+                            // Use adaptive formatting based on terminal width (only in non-quiet mode)
+                            if !self.quiet_mode {
+                                print!(
+                                    "{}",
+                                    self.display_formatter
+                                        .format_file_summary_adaptive(file_path, &detections)
+                                );
+                                println!(); // Add spacing between files
+                            }
 
                             all_detections.extend(detections);
                         }
                         Err(e) => {
-                            println!("   ❌ Failed to analyze {file_path}: {e}");
+                            if !self.quiet_mode {
+                                println!("   ❌ Failed to analyze {file_path}: {e}");
+                            }
                         }
                     }
                 }
             }
         }
 
-        // Report missing files honestly
-        if !files_missing.is_empty() {
+        // Report missing files honestly (only in non-quiet mode)
+        if !self.quiet_mode && !files_missing.is_empty() {
             println!("📁 Files that no longer exist:");
             for file_path in &files_missing {
                 println!("   📁 {file_path}");
             }
         }
 
-        println!("📊 Analysis Summary:");
-        println!("   Files found and analyzed: {files_analyzed}");
-        println!("   Files missing/removed: {}", files_missing.len());
-        println!("   Total bullshit patterns: {}", all_detections.len());
+        if !self.quiet_mode {
+            println!("📊 Analysis Summary:");
+            println!("   Files found and analyzed: {files_analyzed}");
+            println!("   Files missing/removed: {}", files_missing.len());
+            println!("   Total bullshit patterns: {}", all_detections.len());
 
-        // If many files with issues, show a compact tree summary
-        if existing_files.len() > 5 && !all_detections.is_empty() {
-            println!("\n📋 Issues Overview:");
-            let file_summaries: Vec<(String, Vec<BullshitDetection>)> = existing_files
-                .iter()
-                .map(|file_path| {
-                    let file_detections: Vec<_> = all_detections
-                        .iter()
-                        .filter(|d| d.file_path.contains(file_path))
-                        .cloned()
-                        .collect();
-                    (file_path.clone(), file_detections)
-                })
-                .collect();
+            // If many files with issues, show a compact tree summary
+            if existing_files.len() > 5 && !all_detections.is_empty() {
+                println!("\n📋 Issues Overview:");
+                let file_summaries: Vec<(String, Vec<BullshitDetection>)> = existing_files
+                    .iter()
+                    .map(|file_path| {
+                        let file_detections: Vec<_> = all_detections
+                            .iter()
+                            .filter(|d| d.file_path.contains(file_path))
+                            .cloned()
+                            .collect();
+                        (file_path.clone(), file_detections)
+                    })
+                    .collect();
 
-            print!(
-                "{}",
-                self.display_formatter.format_summary_tree(&file_summaries)
-            );
+                print!(
+                    "{}",
+                    self.display_formatter.format_summary_tree(&file_summaries)
+                );
+            }
         }
 
         // Calculate simple metrics

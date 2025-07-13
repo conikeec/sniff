@@ -38,12 +38,14 @@ struct Cli {
 }
 
 /// Output format for commands
-#[derive(ValueEnum, Clone, Debug)]
+#[derive(ValueEnum, Clone, Debug, PartialEq)]
 enum OutputFormat {
     /// Human-readable table format
     Table,
     /// JSON format
     Json,
+    /// Markdown format
+    Markdown,
     /// Compact one-line format
     Compact,
 }
@@ -527,6 +529,20 @@ async fn handle_search_command(
                 });
                 println!("{}", serde_json::to_string_pretty(&json_output)?);
             }
+            OutputFormat::Markdown => {
+                println!("# Search Results");
+                println!();
+                for (session_id, snippets) in search_results {
+                    println!("## Session: `{}`", session_id);
+                    println!();
+                    for snippet in snippets {
+                        println!("```");
+                        println!("{}", snippet);
+                        println!("```");
+                        println!();
+                    }
+                }
+            }
             OutputFormat::Compact => {
                 for (session_id, _) in search_results {
                     println!("{}", session_id);
@@ -594,6 +610,19 @@ async fn handle_info_command(
                         });
                         println!("{}", serde_json::to_string_pretty(&json_output)?);
                     }
+                    OutputFormat::Markdown => {
+                        println!("# Session Information");
+                        println!();
+                        println!("| Property | Value |");
+                        println!("| -------- | ----- |");
+                        println!("| ID | `{}` |", session);
+                        println!("| Root Hash | `{}` |", root_hash);
+                        println!("| Messages | {} |", session_node.metadata.message_count);
+                        println!("| Operations | {} |", session_node.metadata.operation_count);
+                        println!("| Content Size | {} bytes |", session_node.metadata.content_size);
+                        println!("| Created | {} |", session_node.metadata.created_at);
+                        println!("| Updated | {} |", session_node.metadata.updated_at);
+                    }
                     OutputFormat::Compact => {
                         println!(
                             "{}: {} msgs, {} ops, {} bytes",
@@ -645,6 +674,17 @@ async fn handle_info_command(
                 let json_output = serde_json::to_value(&stats)?;
                 println!("{}", serde_json::to_string_pretty(&json_output)?);
             }
+            OutputFormat::Markdown => {
+                println!("# Database Information");
+                println!();
+                println!("| Property | Value |");
+                println!("| -------- | ----- |");
+                println!("| Total Nodes | {} |", stats.total_nodes);
+                println!("| Total Sessions | {} |", stats.total_sessions);
+                println!("| Total Projects | {} |", stats.total_projects);
+                println!("| File Size | {} bytes |", stats.file_size_bytes);
+                println!("| Schema Version | {} |", stats.schema_version);
+            }
             OutputFormat::Compact => {
                 println!(
                     "{} nodes, {} sessions, {} projects",
@@ -668,7 +708,7 @@ async fn handle_stats_command(
 
     // Initialize storage
     let storage_config = StorageConfig {
-        db_path: database_path,
+        db_path: database_path.clone(),
         ..Default::default()
     };
     let storage = TreeStorage::open(storage_config)?;
@@ -745,6 +785,62 @@ async fn handle_stats_command(
             }
 
             println!("{}", serde_json::to_string_pretty(&json_output)?);
+        }
+        OutputFormat::Markdown => {
+            println!("# Sniff Statistics");
+            println!();
+            
+            println!("## Database");
+            println!();
+            println!("| Metric | Value |");
+            println!("| ------ | ----- |");
+            println!("| Total Nodes | {} |", db_stats.total_nodes);
+            println!("| Total Sessions | {} |", db_stats.total_sessions);
+            println!("| Total Projects | {} |", db_stats.total_projects);
+            println!("| File Size | {:.2} MB |", db_stats.file_size_bytes as f64 / 1_048_576.0);
+            println!("| Schema Version | {} |", db_stats.schema_version);
+            println!();
+
+            if detailed {
+                println!("## Cache Performance");
+                println!();
+                println!("| Metric | Value |");
+                println!("| ------ | ----- |");
+                println!("| Hit Ratio | {:.2}% |", cache_stats.hit_ratio() * 100.0);
+                println!("| Total Hits | {} |", cache_stats.hits);
+                println!("| Total Misses | {} |", cache_stats.misses);
+                println!("| Evictions | {} |", cache_stats.evictions);
+                println!();
+            }
+
+            if let Some(project) = project_filter {
+                println!("## Project Filter");
+                println!();
+                println!("**Project**: `{}`", project);
+                println!();
+                
+                // Get project-specific statistics
+                let storage_config = sniff::storage::StorageConfig {
+                    db_path: database_path,
+                    ..Default::default()
+                };
+                let storage = sniff::storage::TreeStorage::open(storage_config)?;
+                let sessions = storage.list_sessions()?;
+                let project_sessions: Vec<_> = sessions
+                    .into_iter()
+                    .filter(|s| s.contains(&project))
+                    .collect();
+
+                println!("**Project Sessions**: {}", project_sessions.len());
+                if !project_sessions.is_empty() {
+                    println!();
+                    println!("### Sessions:");
+                    for session in &project_sessions {
+                        println!("- `{}`", session);
+                    }
+                    println!();
+                }
+            }
         }
         OutputFormat::Compact => {
             println!(
@@ -948,8 +1044,12 @@ async fn handle_analyze_command(
 
     info!("🕵️  Starting bullshit analysis of Claude Code sessions");
 
-    // Create the session analyzer
-    let mut analyzer = SimpleSessionAnalyzer::new()?;
+    // Create the session analyzer (use quiet mode for non-table formats)
+    let mut analyzer = if format == OutputFormat::Table {
+        SimpleSessionAnalyzer::new()?
+    } else {
+        SimpleSessionAnalyzer::new_quiet()?
+    };
     let mut all_analyses = Vec::new();
 
     if let Some(session_path) = session_file {
@@ -1052,6 +1152,9 @@ fn display_analysis_results(
             let json_output = serde_json::to_string_pretty(&analyses)?;
             println!("{}", json_output);
         }
+        OutputFormat::Markdown => {
+            display_markdown_format(analyses, detailed);
+        }
         OutputFormat::Compact => {
             display_compact_format(analyses);
         }
@@ -1112,37 +1215,53 @@ fn display_table_format(analyses: &[SimpleSessionAnalysis], detailed: bool) {
         println!();
     }
 
+    // Always show session analysis with issues and recommendations
+    if !analyses.is_empty() && analyses.iter().any(|a| !a.bullshit_detections.is_empty() || !a.recommendations.is_empty()) {
+        println!("📄 Session Analysis:");
+        for analysis in analyses {
+            if !analysis.bullshit_detections.is_empty() || !analysis.recommendations.is_empty() {
+                println!("   Session: {}", analysis.session_id);
+                println!("      Files: {}", analysis.modified_files.len());
+                println!("      Operations: {}", analysis.file_operations.len());
+                println!(
+                    "      Patterns: {}",
+                    analysis.metrics.total_bullshit_patterns
+                );
+                println!("      Quality: {:.1}%", analysis.metrics.quality_score);
+
+                if !analysis.bullshit_detections.is_empty() {
+                    println!("      Issues:");
+                    for detection in &analysis.bullshit_detections {
+                        println!(
+                            "         {} {} ({}:{}): {}",
+                            detection.severity.emoji(),
+                            detection.rule_name,
+                            detection.file_path,
+                            detection.line_number,
+                            detection.code_snippet.trim()
+                        );
+                    }
+                }
+
+                if !analysis.recommendations.is_empty() {
+                    println!("      Recommendations:");
+                    for rec in &analysis.recommendations {
+                        println!("         {}", rec);
+                    }
+                }
+                println!();
+            }
+        }
+    }
+
+    // Additional detailed information only when --detailed flag is used
     if detailed {
-        println!("📄 Detailed Session Analysis:");
+        println!("📄 Additional Details:");
         for analysis in analyses {
             println!("   Session: {}", analysis.session_id);
-            println!("      Files: {}", analysis.modified_files.len());
-            println!("      Operations: {}", analysis.file_operations.len());
-            println!(
-                "      Patterns: {}",
-                analysis.metrics.total_bullshit_patterns
-            );
-            println!("      Quality: {:.1}%", analysis.metrics.quality_score);
-
-            if !analysis.bullshit_detections.is_empty() {
-                println!("      Issues:");
-                for detection in &analysis.bullshit_detections {
-                    println!(
-                        "         {} {} ({}:{}): {}",
-                        detection.severity.emoji(),
-                        detection.rule_name,
-                        detection.file_path,
-                        detection.line_number,
-                        detection.code_snippet.trim()
-                    );
-                }
-            }
-
-            if !analysis.recommendations.is_empty() {
-                println!("      Recommendations:");
-                for rec in &analysis.recommendations {
-                    println!("         {}", rec);
-                }
+            println!("      Modified Files:");
+            for file in &analysis.modified_files {
+                println!("         {}", file);
             }
             println!();
         }
@@ -1170,6 +1289,149 @@ fn display_table_format(analyses: &[SimpleSessionAnalysis], detailed: bool) {
         }
     } else {
         println!("✅ No bullshit patterns detected! Excellent work!");
+    }
+}
+
+fn display_markdown_format(analyses: &[SimpleSessionAnalysis], detailed: bool) {
+    println!("# 🕵️ Bullshit Analysis Results");
+    println!();
+
+    // Summary statistics
+    let total_sessions = analyses.len();
+    let total_files = analyses
+        .iter()
+        .map(|a| a.modified_files.len())
+        .sum::<usize>();
+    let total_patterns = analyses
+        .iter()
+        .map(|a| a.metrics.total_bullshit_patterns)
+        .sum::<usize>();
+    let critical_patterns = analyses
+        .iter()
+        .map(|a| a.metrics.critical_patterns)
+        .sum::<usize>();
+    let avg_quality = if total_sessions > 0 {
+        analyses
+            .iter()
+            .map(|a| a.metrics.quality_score)
+            .sum::<f64>()
+            / total_sessions as f64
+    } else {
+        0.0
+    };
+
+    println!("## 📊 Summary");
+    println!();
+    println!("| Metric | Value |");
+    println!("| ------ | ----- |");
+    println!("| Sessions analyzed | {} |", total_sessions);
+    println!("| Files modified | {} |", total_files);
+    println!("| Bullshit patterns | {} |", total_patterns);
+    println!("| Critical patterns | {} |", critical_patterns);
+    println!("| Average quality | {:.1}% |", avg_quality);
+    println!();
+
+    if critical_patterns > 0 {
+        println!("## 🚨 Sessions with Critical Issues");
+        println!();
+        for analysis in analyses {
+            if analysis.metrics.critical_patterns > 0 {
+                println!(
+                    "- **{}** - {} critical patterns, {:.1}% quality",
+                    analysis.session_id,
+                    analysis.metrics.critical_patterns,
+                    analysis.metrics.quality_score
+                );
+            }
+        }
+        println!();
+    }
+
+    // Always show session analysis with issues and recommendations
+    if !analyses.is_empty() && analyses.iter().any(|a| !a.bullshit_detections.is_empty() || !a.recommendations.is_empty()) {
+        println!("## 📄 Session Analysis");
+        println!();
+        for analysis in analyses {
+            if !analysis.bullshit_detections.is_empty() || !analysis.recommendations.is_empty() {
+                println!("### Session: `{}`", analysis.session_id);
+                println!();
+                println!("- **Files**: {}", analysis.modified_files.len());
+                println!("- **Operations**: {}", analysis.file_operations.len());
+                println!("- **Patterns**: {}", analysis.metrics.total_bullshit_patterns);
+                println!("- **Quality**: {:.1}%", analysis.metrics.quality_score);
+                println!();
+
+                if !analysis.bullshit_detections.is_empty() {
+                    println!("#### Issues");
+                    println!();
+                    for detection in &analysis.bullshit_detections {
+                        println!(
+                            "- {} **{}** (`{}:{}`):",
+                            detection.severity.emoji(),
+                            detection.rule_name,
+                            detection.file_path,
+                            detection.line_number
+                        );
+                        println!("  ```");
+                        println!("  {}", detection.code_snippet.trim());
+                        println!("  ```");
+                        println!("  *{}*", detection.description);
+                        println!();
+                    }
+                }
+
+                if !analysis.recommendations.is_empty() {
+                    println!("#### Recommendations");
+                    println!();
+                    for rec in &analysis.recommendations {
+                        println!("- {}", rec);
+                    }
+                    println!();
+                }
+            }
+        }
+    }
+
+    // Additional detailed information only when --detailed flag is used
+    if detailed {
+        println!("## 📄 Additional Details");
+        println!();
+        for analysis in analyses {
+            println!("### Session: `{}`", analysis.session_id);
+            println!();
+            println!("- **Modified Files**:");
+            for file in &analysis.modified_files {
+                println!("  - `{}`", file);
+            }
+            println!();
+        }
+    }
+
+    // Overall recommendation
+    if total_patterns > 0 {
+        println!("## 💡 Overall Recommendations");
+        println!();
+        if critical_patterns > 0 {
+            println!(
+                "- 🚨 **Address {} critical patterns immediately**",
+                critical_patterns
+            );
+        }
+        if avg_quality < 80.0 {
+            println!(
+                "- 📝 **Code quality needs improvement** (current: {:.1}%)",
+                avg_quality
+            );
+        }
+        if total_patterns > total_sessions * 5 {
+            println!(
+                "- 🔍 **High pattern density detected** - consider reviewing development practices"
+            );
+        }
+    } else {
+        println!("## ✅ Results");
+        println!();
+        println!("**No bullshit patterns detected! Excellent work!**");
     }
 }
 

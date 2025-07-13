@@ -12,7 +12,6 @@
 use crate::analysis::{BullshitDetection, ContextLines};
 use crate::playbook::Severity;
 use colored::{Color, Colorize};
-use comfy_table::Color as TableColor;
 use console::Term;
 use std::path::Path;
 
@@ -560,16 +559,6 @@ impl BullshitDisplayFormatter {
         output
     }
 
-    /// Gets the appropriate table color for a severity level.
-    fn get_table_color(&self, severity: &Severity) -> TableColor {
-        match severity {
-            Severity::Critical => TableColor::Red,
-            Severity::High => TableColor::Red,
-            Severity::Medium => TableColor::Yellow,
-            Severity::Low => TableColor::Blue,
-            Severity::Info => TableColor::Cyan,
-        }
-    }
 
     /// Creates a summary tree view for very narrow terminals.
     #[must_use]
