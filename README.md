@@ -1,4 +1,4 @@
-# Sniff: Misalignment detection in vibe coding loops
+# Sniff: Misalignment detection in Vibe Coding loops
 
 Sniff is a Rust-based CLI tool that detects code quality issues and misalignment patterns in codebases. It provides static analysis capabilities for identifying problematic patterns, tracking code quality over time, and integrating quality gates into development workflows.
 
