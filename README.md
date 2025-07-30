@@ -2,7 +2,7 @@
 
 Sniff is a Rust-based CLI tool that detects code quality issues and misalignment patterns in codebases. It provides static analysis capabilities for identifying problematic patterns, tracking code quality over time, and integrating quality gates into development workflows.
 
-## Origin: Catching AI Deception in the generative loop (TODO Plan -> Execute -> TODO Done) Real-Time
+## Origin: Catching AI Deception in the generative loop Real-Time
 
 Sniff emerged from direct observation of AI agents during exploratory coding sessions. During intensive development with AI assistants (Claude, GPT-4, etc.), a pattern became clear: the models were systematically creating deceptive code that provided an illusion of completion while introducing subtle failures.
 

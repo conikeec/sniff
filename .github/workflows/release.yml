@@ -59,12 +59,8 @@ jobs:
             
             #### From Homebrew
             ```bash
-            brew install ${{ github.repository_owner }}/tap/sniff
-            ```
-            
-            #### From Cargo
-            ```bash
-            cargo install sniff
+            brew tap ${{ github.repository_owner }}/tap
+            brew install sniff
             ```
             
             ### Usage
@@ -208,28 +204,29 @@ jobs:
               "description": "Code quality analysis tool that detects AI-generated deception patterns"
             }
 
-  publish-crates-io:
-    name: Publish to crates.io
-    needs: build
-    runs-on: ubuntu-latest
-    if: ${{ !contains(github.ref, 'beta') && !contains(github.ref, 'alpha') && !contains(github.ref, 'rc') }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Publish to crates.io
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish --verbose
+  # TODO: Enable crates.io publishing once rust_tree_sitter dependency is available on crates.io
+  # publish-crates-io:
+  #   name: Publish to crates.io  
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   if: ${{ !contains(github.ref, 'beta') && !contains(github.ref, 'alpha') && !contains(github.ref, 'rc') }}
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Install Rust
+  #       uses: dtolnay/rust-toolchain@stable
+  #
+  #     - name: Cache cargo registry
+  #       uses: actions/cache@v4
+  #       with:
+  #         path: |
+  #           ~/.cargo/registry
+  #           ~/.cargo/git
+  #           target
+  #         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+  #
+  #     - name: Publish to crates.io
+  #       env:
+  #         CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+  #       run: cargo publish --verbose
