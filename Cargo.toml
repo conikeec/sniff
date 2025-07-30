@@ -27,13 +27,7 @@ notify = "6.1"
 walkdir = "2.4"
 dirs = "5.0"
 
-# Hashing and cryptography
-blake3 = "1.5"
-hex = "0.4"
-
-# Database and storage
-redb = "2.1"
-bincode = "1.3"
+# Note: Removed blake3, hex, redb, bincode - legacy dependencies for Claude Code session storage
 
 # CLI framework
 clap = { version = "4.4", features = ["derive"] }

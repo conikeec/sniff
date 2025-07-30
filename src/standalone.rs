@@ -750,7 +750,13 @@ impl CheckpointManager {
             .await
             .map_err(|e| SniffError::file_system(file_path, e))?;
 
-        let content_hash = blake3::hash(&content);
+        // Use a simple checksum for file content comparison (simplified from blake3)
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        
+        let mut hasher = DefaultHasher::new();
+        content.hash(&mut hasher);
+        let content_hash = hasher.finish();
 
         Ok(Some(FileSnapshot {
             size: metadata.len(),
@@ -758,7 +764,7 @@ impl CheckpointManager {
                 .modified()
                 .map_err(|e| SniffError::file_system(file_path, e))?
                 .into(),
-            content_hash: hex::encode(content_hash.as_bytes()),
+            content_hash: format!("{:x}", content_hash),
         }))
     }
 

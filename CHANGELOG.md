@@ -8,14 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- TODO verification with quality gates (`verify-todo` command)
+- Git discovery for preventing AI agent deception during verification
 - Comprehensive CI/CD pipeline with GitHub Actions
 - Automated binary releases for multiple platforms
 - Homebrew formula and tap integration
 - Code formatting and quality check scripts
 - Cross-platform release automation
+- Multi-platform editor integrations (VS Code, Cursor, Gemini CLI)
+- Checkpoint system for tracking code changes over time
 
 ### Changed
 - Improved release workflow with automated testing
+- Enhanced standalone file analysis independent of Claude Code
+- Streamlined CLI interface with focus on quality verification
+
+### Removed
+- Claude Code specific session management (tree.rs, session.rs, storage.rs)
+- Merkle tree storage system (hash.rs, removed blake3/redb dependencies)
+- Session indexing and search commands (search.rs, operations.rs)
+- Legacy JSONL parsing (jsonl.rs)
+- Progress indicators and file watchers (progress.rs, watcher.rs)
+- Complex pattern learning system APIs (simplified)
+- Database maintenance commands
+
+### Deprecated
+- Legacy types.rs (partially cleaned, can be further reduced)
 
 ## [0.1.0] - 2024-XX-XX
 

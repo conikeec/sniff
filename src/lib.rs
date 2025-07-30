@@ -1,10 +1,11 @@
 // Copyright (c) 2025 Chetan Conikee <conikee@gmail.com>
 // Licensed under the MIT License
 
-//! Sniff CLI - Advanced navigation and search for Claude Code session histories.
+//! Sniff - Code Quality Analysis and AI Deception Detection
 //!
-//! This library provides comprehensive tools for analyzing, indexing, and searching
-//! through Claude Code session data using Merkle trees and full-text search.
+//! This library provides comprehensive tools for analyzing code quality,
+//! detecting AI-generated deception patterns, and implementing quality gates
+//! in development workflows.
 
 #![warn(missing_docs)]
 #![warn(clippy::all)]
@@ -28,21 +29,11 @@
 pub mod analysis;
 pub mod display;
 pub mod error;
-pub mod hash;
-pub mod jsonl;
-pub mod operations;
 pub mod pattern_learning;
 pub mod playbook;
-pub mod progress;
-pub mod search;
-pub mod session;
-pub mod simple_session_analyzer;
 pub mod standalone;
-pub mod storage;
-pub mod tree;
 pub mod types;
 pub mod verify_todo;
-pub mod watcher;
 
 // Re-export commonly used types
 pub use analysis::{
@@ -55,5 +46,4 @@ pub use pattern_learning::{
     LearnedPattern, LearningConfig, PatternCreationRequest, PatternCreationResponse,
     PatternLearningManager, PatternMetadata, PatternStatistics,
 };
-pub use simple_session_analyzer::{SimpleSessionAnalysis, SimpleSessionAnalyzer};
-pub use types::{ClaudeMessage, MessageUuid, SessionId, ToolUseId, ToolUseOperation};
+// Note: types.rs can be further cleaned up to remove Claude-specific types
