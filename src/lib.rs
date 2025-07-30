@@ -10,21 +10,9 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 #![warn(clippy::pedantic)]
-#![allow(clippy::module_name_repetitions)]
-#![allow(clippy::needless_pass_by_value)]
-#![allow(clippy::unused_self)]
-#![allow(clippy::unnecessary_wraps)]
-#![allow(clippy::missing_errors_doc)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::explicit_counter_loop)]
-#![allow(clippy::ref_option)]
-#![allow(clippy::match_same_arms)]
-#![allow(clippy::cast_sign_loss)]
-#![allow(clippy::cast_precision_loss)]
-#![allow(clippy::too_many_lines)]
-#![allow(clippy::manual_let_else)]
-#![allow(clippy::struct_excessive_bools)]
-#![allow(clippy::manual_flatten)]
+// Allow these specific clippy warnings for legitimate reasons
+#![allow(clippy::missing_errors_doc)] // Error docs would be repetitive for Result<T>
+#![allow(clippy::cast_precision_loss)] // Necessary for quality score calculations
 
 pub mod analysis;
 pub mod display;
@@ -32,7 +20,7 @@ pub mod error;
 pub mod pattern_learning;
 pub mod playbook;
 pub mod standalone;
-pub mod types;
+
 pub mod verify_todo;
 
 // Re-export commonly used types
@@ -46,4 +34,3 @@ pub use pattern_learning::{
     LearnedPattern, LearningConfig, PatternCreationRequest, PatternCreationResponse,
     PatternLearningManager, PatternMetadata, PatternStatistics,
 };
-// Note: types.rs can be further cleaned up to remove Claude-specific types

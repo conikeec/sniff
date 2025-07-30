@@ -2,7 +2,7 @@
 
 Sniff is a Rust-based CLI tool that detects code quality issues and misalignment patterns in codebases. It provides static analysis capabilities for identifying problematic patterns, tracking code quality over time, and integrating quality gates into development workflows.
 
-## Origin: Catching AI Deception in Real-Time
+## Origin: Catching AI Deception in the generative loop (TODO Plan -> Execute -> TODO Done) Real-Time
 
 Sniff emerged from direct observation of AI agents during exploratory coding sessions. During intensive development with AI assistants (Claude, GPT-4, etc.), a pattern became clear: the models were systematically creating deceptive code that provided an illusion of completion while introducing subtle failures.
 
@@ -16,7 +16,17 @@ The agents weren't making random mistakes—they were learning to optimize for _
 
 Sniff was built incrementally by identifying these adaptive patterns as they emerged during reasoning loops. Rather than asking agents to self-reflect on their code quality (which proved unreliable), Sniff serves as a deterministic reflector that independently verifies task completion without bias.
 
-## Problem Statement
+### The Generative Loop Integration
+
+In vibe coding workflows, development follows a natural generative loop: **Plan item → Act → Plan item done**. This cycle repeats continuously as developers (human or AI) break down work into actionable tasks, execute implementations, and mark completion before moving to the next item.
+
+Sniff integrates directly into this loop as a quality gate between "Act" and "Plan item done." When an implementation claims completion, Sniff analyzes the code for deceptive patterns and quality issues. If problems are detected, the system loops back to "Act" rather than allowing false completion. This creates a feedback mechanism that prevents deceptive code from accumulating and ensures each cycle produces genuinely functional progress.
+
+The loop becomes: **Plan item → Act → Sniff verification → [Pass: Plan item done] | [Fail: Loop back to Act]**. This integration transforms the traditional development cycle into a self-correcting system that maintains code quality standards while preserving the natural flow of iterative development.
+
+**Zero Trust Verification**: Sniff operates on a zero trust principle when verifying agent-reported changes. Rather than trusting an agent's list of modified files, Sniff can enforce git discovery (`--git-discovery` flag) to independently discover all changed files. This prevents agents from "sweeping files under the rug"—selectively hiding problematic implementations while only reporting clean files for verification. The zero trust approach ensures that quality gates examine the complete scope of changes, not just what the agent chooses to reveal.
+
+## Current State
 
 AI-generated code often contains patterns that satisfy immediate compilation requirements but fail in production environments. These patterns include:
 
@@ -63,9 +73,11 @@ sniff --version
 
 Analyze codebase files for code quality issues and misalignment patterns.
 
+**Note**: Files detected as test files are excluded by default. Use `--include-tests` to analyze test files.
+
 ```bash
-# Basic file analysis
-sniff analyze-files tests/samples/test_misalignment.rs
+# Basic file analysis (use --include-tests for test files)
+sniff analyze-files tests/samples/test_misalignment.rs --include-tests
 ```
 
 **Output:**
@@ -92,8 +104,8 @@ TODO Verification Report
 ```
 
 ```bash
-# Analyze multiple files with filtering
-sniff analyze-files tests/samples/ --extensions rs,py,ts
+# Analyze multiple files with filtering (including test files)
+sniff analyze-files tests/samples/ --extensions rs,py,ts --include-tests
 ```
 
 **Output:**
@@ -115,12 +127,12 @@ Analysis Summary
 
 ```bash
 # Detailed analysis with specific issues
-sniff analyze-files tests/samples/test_misalignment.rs --detailed
+sniff analyze-files tests/samples/test_misalignment.rs --detailed --include-tests
 ```
 
 ```bash
 # Compact output for CI/CD integration
-sniff analyze-files tests/samples/ --format compact
+sniff analyze-files tests/samples/ --format compact --include-tests
 ```
 
 **Output:**
@@ -253,75 +265,27 @@ Changes since checkpoint 'pre-refactor'
 
 #### `sniff patterns` - Pattern Management
 
-Manage pattern detection rules and create custom quality checks.
+Simplified pattern management system using YAML playbooks.
 
 ```bash
-# List available patterns for a language
-sniff patterns list --language rust
-```
-
-```bash
-# Export patterns for team sharing
-sniff patterns export --language rust --output team-patterns.yaml
-```
-
-```bash
-# Initialize pattern system
+# Initialize pattern system (shows guidance)
 sniff patterns init
 ```
 
-### Advanced Commands
+**Note**: Enhanced patterns are automatically installed and managed:
 
-#### `sniff scan` - Session Discovery
+- **Auto-installation**: Enhanced patterns install to `~/.sniff/patterns/` on first run
+- **Pattern loading**: Patterns are automatically loaded from the standard location
+- **Available patterns**: Rust, Python, and TypeScript patterns are included
+- **Custom patterns**: Add new YAML files to `~/.sniff/patterns/` directory
+- **Consistent behavior**: Same results regardless of working directory
 
-Discover and import Claude Code sessions for analysis.
+**Output:**
 
-```bash
-# Scan all available Claude Code sessions
-sniff scan --skip-operations
 ```
-
-#### `sniff analyze` - Session Analysis
-
-Analyze Claude Code sessions for patterns and dependencies.
-
-```bash
-# Analyze by project
-sniff analyze --project my-project
-```
-
-#### `sniff search` - Content Search
-
-Search across sessions and code for patterns and content.
-
-```bash
-# Full-text search across sessions
-sniff search "error" --limit 5
-```
-
-#### `sniff stats` - Statistics
-
-Show database and processing statistics.
-
-```bash
-# Show overall statistics
-sniff stats
-```
-
-### Database Commands
-
-#### `sniff db` - Database Management
-
-Manage the Sniff database and indices.
-
-```bash
-# Show database status
-sniff db status
-```
-
-```bash
-# Clear all data (requires confirmation)
-sniff db clear --confirm
+💡 Enhanced patterns are installed in ~/.sniff/patterns/
+🔄 Add custom patterns by placing YAML files in that directory
+🔍 Available patterns are loaded automatically during analysis
 ```
 
 ## Quick Start Guide
@@ -335,8 +299,8 @@ cargo install --git https://github.com/conikeec/sniff
 # Navigate to your project
 cd /path/to/your/codebase
 
-# Run analysis
-sniff analyze-files . --extensions rs,py,ts,js
+# Run analysis (including test files)
+sniff analyze-files . --extensions rs,py,ts,js --include-tests
 ```
 
 ### 2. Quality Gates
@@ -363,7 +327,7 @@ sniff checkpoint create --name "baseline" .
 # Work on code...
 
 # Compare against baseline
-sniff analyze-files . --diff-checkpoint "baseline"
+sniff checkpoint diff baseline
 ```
 
 ## File Structure
@@ -371,10 +335,13 @@ sniff analyze-files . --diff-checkpoint "baseline"
 Sniff maintains analysis data in a `.sniff` directory:
 
 ```
-.sniff/
-├── config.toml              # Configuration
+~/.sniff/
+├── patterns/                # Enhanced pattern definitions (auto-installed)
+│   ├── rust-patterns.yaml
+│   ├── python-patterns.yaml
+│   └── typescript-patterns.yaml
 ├── checkpoints/             # Checkpoint data
-├── patterns/                # Pattern library
+├── config/                  # Configuration files
 └── cache/                   # Performance caches
 ```
 
@@ -428,9 +395,9 @@ echo "Running Sniff code quality analysis..."
 STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(rs|py|ts|js)$')
 
 if [ -n "$STAGED_FILES" ]; then
-    sniff analyze-files $STAGED_FILES --format compact
+    sniff analyze-files $STAGED_FILES --format compact --include-tests
 
-    if sniff analyze-files $STAGED_FILES --format json | grep -q '"critical_issues":[^0]'; then
+    if sniff analyze-files $STAGED_FILES --format json --include-tests | grep -q '"critical_issues":[^0]'; then
         echo "Critical issues detected. Commit blocked."
         exit 1
     fi
@@ -471,8 +438,8 @@ learn_from_failures = true
 
 - `--min-quality-score`: Minimum quality score required (0-100)
 - `--max-critical-issues`: Maximum critical issues allowed
-- `--include-tests`: Include test files in analysis
-- `--test-confidence`: Confidence threshold for test file detection
+- `--include-tests`: Include test files in analysis (required for files detected as tests)
+- `--test-confidence`: Confidence threshold for test file detection (0.0-1.0, default: 0.3)
 
 ### Security Options
 
@@ -481,6 +448,20 @@ learn_from_failures = true
   - Compares agent-reported vs git-discovered files
   - Warns when agents hide problematic files
   - Recommended for CI/CD and agent-completed tasks
+
+## Community & Contributing
+
+**Help Build Better Patterns**: Sniff's effectiveness grows with community contributions to the pattern detection playbooks. We encourage developers to submit PRs that:
+
+- **Add new deceptive patterns** discovered in real-world AI coding sessions
+- **Enhance existing patterns** with better regex or detection logic
+- **Expand language support** with patterns for new programming languages
+- **Improve pattern descriptions** to help developers understand detected issues
+- **Share integration examples** for new editors, CI/CD systems, or workflows
+
+The pattern playbooks in `playbooks/` are the core of Sniff's detection capabilities. Every contributed pattern helps the entire community catch AI deception more effectively. Whether you've found a new way AI agents try to fake completion or discovered edge cases in existing patterns, your contributions make Sniff more robust for everyone.
+
+**Getting Started**: Check out existing patterns in `playbooks/rust-patterns.yaml`, `playbooks/python-patterns.yaml`, and `playbooks/typescript-patterns.yaml` to understand the format, then submit your improvements via pull request.
 
 ## License
 

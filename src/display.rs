@@ -596,7 +596,7 @@ impl MisalignmentDisplayFormatter {
 
                 if self.use_colors {
                     output.push_str(&format!(
-                        "{}{} {} 🚨{} 🔴{}\n",
+                        "{}{} {} [CRIT]{} [HIGH]{}\n",
                         tree_char,
                         file_name.red(),
                         detections.len(),
@@ -605,7 +605,7 @@ impl MisalignmentDisplayFormatter {
                     ));
                 } else {
                     output.push_str(&format!(
-                        "{}{} {} 🚨{} 🔴{}\n",
+                        "{}{} {} [CRIT]{} [HIGH]{}\n",
                         tree_char,
                         file_name,
                         detections.len(),

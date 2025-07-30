@@ -71,7 +71,7 @@ pub async fn verify_todo(
         // Use git-discovered files instead of reported files
         return verify_todo_with_files(todo_id, &git_files, config).await;
     }
-    info!("🔍 Verifying TODO '{}' with sniff analysis", todo_id);
+    info!("[VERIFY] Verifying TODO '{}' with sniff analysis", todo_id);
 
     if files.is_empty() {
         return Ok(VerificationResult {
@@ -312,7 +312,7 @@ pub fn discover_git_changes() -> Result<Vec<PathBuf>> {
             let files = parse_git_output(&output.stdout)?;
             let code_files: Vec<_> = files
                 .into_iter()
-                .filter(|f| is_code_file(f))
+                .filter(is_code_file)
                 .collect();
             all_files.extend(code_files);
         }

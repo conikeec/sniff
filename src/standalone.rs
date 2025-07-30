@@ -183,7 +183,7 @@ impl StandaloneAnalyzer {
             .unwrap_or("");
         
         let temp_file = tempfile::Builder::new()
-            .suffix(&format!(".{}", extension))
+            .suffix(&format!(".{extension}"))
             .tempfile()
             .map_err(|e| SniffError::file_system(file_path, e))?;
 
@@ -191,7 +191,13 @@ impl StandaloneAnalyzer {
             .map_err(|e| SniffError::file_system(file_path, e))?;
 
         // Analyze content for bullshit patterns
-        let detections = self.misalignment_analyzer.analyze_file(temp_file.path())?;
+        let mut detections = self.misalignment_analyzer.analyze_file(temp_file.path())?;
+
+        // Fix detection file paths to use original file path instead of temp file path
+        let original_path_str = file_path.to_string_lossy().to_string();
+        for detection in &mut detections {
+            detection.file_path = original_path_str.clone();
+        }
 
         // Calculate quality score
         let quality_score = self.calculate_quality_score(&detections);
@@ -300,13 +306,10 @@ impl StandaloneAnalyzer {
         // Check test file filtering
         if !self.config.filter.include_test_files {
             // Read file content to classify
-            let content = match fs::read_to_string(file_path).await {
-                Ok(content) => content,
-                Err(_) => {
-                    // If we can't read the file, skip test file detection
-                    debug!("Unable to read file for test classification: {}", file_path.display());
-                    return Ok(true);
-                }
+            let content = if let Ok(content) = fs::read_to_string(file_path).await { content } else {
+                // If we can't read the file, skip test file detection
+                debug!("Unable to read file for test classification: {}", file_path.display());
+                return Ok(true);
             };
 
             let test_classification = self.test_classifier.classify_file(
@@ -764,7 +767,7 @@ impl CheckpointManager {
                 .modified()
                 .map_err(|e| SniffError::file_system(file_path, e))?
                 .into(),
-            content_hash: format!("{:x}", content_hash),
+            content_hash: format!("{content_hash:x}"),
         }))
     }
 
@@ -915,12 +918,12 @@ mod tests {
         let test_file = create_test_file(
             temp_dir.path(),
             "test_example.rs",
-            r#"
+            r"
 #[test]
 fn test_something() {
     assert_eq!(1, 1);
 }
-            "#,
+            ",
         ).await;
 
         // Create a regular file
@@ -952,12 +955,12 @@ fn regular_function() {
         let test_file = create_test_file(
             temp_dir.path(),
             "test_example.rs",
-            r#"
+            r"
 #[test]
 fn test_something() {
     assert_eq!(1, 1);
 }
-            "#,
+            ",
         ).await;
 
         // Configure filter to include test files
@@ -979,11 +982,11 @@ fn test_something() {
         let weak_test_file = create_test_file(
             temp_dir.path(),
             "maybe_test.rs",
-            r#"
+            r"
 fn test_helper() {
     // This might be a test helper but confidence is lower
 }
-            "#,
+            ",
         ).await;
 
         // High confidence threshold - should include weak test files

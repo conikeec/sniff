@@ -8,6 +8,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use sniff::{Result, SniffError};
 use std::path::PathBuf;
+use std::fs;
 use tracing::{info, warn, Level};
 use tracing_subscriber::fmt;
 
@@ -291,7 +292,7 @@ async fn main() -> Result<()> {
             include_tests,
             test_confidence,
         } => {
-            handle_analyze_files_command(
+            handle_analyze_files_command(AnalyzeFilesArgs {
                 paths,
                 format,
                 detailed,
@@ -305,7 +306,7 @@ async fn main() -> Result<()> {
                 diff_checkpoint,
                 include_tests,
                 test_confidence,
-            )
+            })
             .await
         }
 
@@ -331,7 +332,7 @@ async fn main() -> Result<()> {
 // These will be copied from the original file...
 
 /// Handles the analyze-files command - analyzes arbitrary files for misalignment patterns.
-async fn handle_analyze_files_command(
+struct AnalyzeFilesArgs {
     paths: Vec<PathBuf>,
     format: OutputFormat,
     detailed: bool,
@@ -345,32 +346,34 @@ async fn handle_analyze_files_command(
     diff_checkpoint: Option<String>,
     include_tests: bool,
     test_confidence: f64,
-) -> Result<()> {
+}
+
+async fn handle_analyze_files_command(args: AnalyzeFilesArgs) -> Result<()> {
     use sniff::analysis::MisalignmentAnalyzer;
     use sniff::standalone::{AnalysisConfig, CheckpointManager, FileFilter, StandaloneAnalyzer};
 
-    info!("🕵️  Starting standalone file analysis");
+    info!(">> Starting standalone file analysis");
 
     // Configure file filter
-    let allowed_extensions = extensions.map(|ext| {
+    let allowed_extensions = args.extensions.map(|ext| {
         ext.split(',')
             .map(|e| e.trim().to_string())
             .collect::<Vec<_>>()
     });
 
     let filter = FileFilter {
-        include_hidden,
+        include_hidden: args.include_hidden,
         allowed_extensions,
-        exclude_pattern: exclude,
-        max_file_size_bytes: (max_file_size_mb * 1024.0 * 1024.0) as u64,
-        include_test_files: include_tests,
-        test_confidence_threshold: test_confidence,
+        exclude_pattern: args.exclude,
+        max_file_size_bytes: (args.max_file_size_mb * 1024.0 * 1024.0) as u64,
+        include_test_files: args.include_tests,
+        test_confidence_threshold: args.test_confidence,
     };
 
     // Create analysis config
     let config = AnalysisConfig {
         filter,
-        force_language: force_language.and_then(|lang| match lang.to_lowercase().as_str() {
+        force_language: args.force_language.and_then(|lang| match lang.to_lowercase().as_str() {
             "rust" => Some(sniff::SupportedLanguage::Rust),
             "python" => Some(sniff::SupportedLanguage::Python),
             "typescript" => Some(sniff::SupportedLanguage::TypeScript),
@@ -383,38 +386,37 @@ async fn handle_analyze_files_command(
                 None
             }
         }),
-        detailed_analysis: detailed,
+        detailed_analysis: args.detailed,
     };
 
-    // Initialize analyzer with learned patterns and playbooks
-    let current_dir = std::env::current_dir().map_err(|e| SniffError::file_system(".", e))?;
-    let mut misalignment_analyzer = match MisalignmentAnalyzer::new_with_learned_patterns(&current_dir) {
-        Ok(analyzer) => analyzer,
-        Err(e) => {
-            warn!("Failed to load learned patterns: {}, falling back to default patterns", e);
-            MisalignmentAnalyzer::new()?
-        }
-    };
+    // Initialize analyzer with default patterns
+    let mut misalignment_analyzer = MisalignmentAnalyzer::new()?;
     
-    // Also load playbooks from the playbooks directory
-    let playbook_dir = current_dir.join("playbooks");
-    if playbook_dir.exists() {
-        if let Err(e) = misalignment_analyzer.load_playbooks(&playbook_dir) {
-            warn!("Failed to load playbooks from {}: {}", playbook_dir.display(), e);
-        } else {
-            info!("Loaded enhanced playbooks from {}", playbook_dir.display());
-        }
+    // Install and load enhanced playbooks from .sniff/patterns/
+    let sniff_dir = ensure_sniff_directory()?;
+    let patterns_dir = sniff_dir.join("patterns");
+    
+    // Install playbooks if they don't exist
+    if !patterns_dir.exists() {
+        install_default_playbooks(&patterns_dir)?;
+    }
+    
+    // Always load patterns from .sniff/patterns/
+    if let Err(e) = misalignment_analyzer.load_playbooks(&patterns_dir) {
+        warn!("Failed to load playbooks from {}: {}", patterns_dir.display(), e);
+    } else {
+        info!("Loaded enhanced playbooks from {}", patterns_dir.display());
     }
     let mut analyzer = StandaloneAnalyzer::new(misalignment_analyzer, config);
 
     // Handle checkpoint comparison if requested
-    if let Some(checkpoint_name) = diff_checkpoint {
+    if let Some(checkpoint_name) = args.diff_checkpoint {
         let current_dir = std::env::current_dir().map_err(|e| SniffError::file_system(".", e))?;
         let checkpoint_manager = CheckpointManager::new(&current_dir)?;
 
-        info!("📊 Comparing against checkpoint: {}", checkpoint_name);
+        info!("[INFO] Comparing against checkpoint: {}", checkpoint_name);
         let comparison = checkpoint_manager
-            .compare_files(&checkpoint_name, &paths)
+            .compare_files(&checkpoint_name, &args.paths)
             .await?;
 
         // Analyze only changed files
@@ -427,46 +429,46 @@ async fn handle_analyze_files_command(
 
         if changed_files.is_empty() {
             println!(
-                "✅ No changes detected since checkpoint '{}'",
+                ">> No changes detected since checkpoint '{}'",
                 checkpoint_name
             );
             return Ok(());
         }
 
         println!(
-            "📁 Analyzing {} changed files since checkpoint '{}'",
+            "[ANALYSIS] Analyzing {} changed files since checkpoint '{}'",
             changed_files.len(),
             checkpoint_name
         );
 
         let results = analyzer.analyze_files(&changed_files).await?;
-        display_standalone_results(&results, format, detailed, Some(&comparison))?;
+        display_standalone_results(&results, args.format, args.detailed, Some(&comparison))?;
     } else {
         // Analyze specified files/directories
-        let results = analyzer.analyze_files(&paths).await?;
+        let results = analyzer.analyze_files(&args.paths).await?;
 
         // Create checkpoint if requested
-        if let Some(checkpoint_name) = checkpoint {
+        if let Some(checkpoint_name) = args.checkpoint {
             let current_dir =
                 std::env::current_dir().map_err(|e| SniffError::file_system(".", e))?;
             let checkpoint_manager = CheckpointManager::new(&current_dir)?;
 
-            info!("📸 Creating checkpoint: {}", checkpoint_name);
+            info!(">> Creating checkpoint: {}", checkpoint_name);
             checkpoint_manager
-                .create_checkpoint(&checkpoint_name, &paths, None)
+                .create_checkpoint(&checkpoint_name, &args.paths, None)
                 .await?;
-            println!("✅ Checkpoint '{}' created", checkpoint_name);
+            println!(">> Checkpoint '{}' created", checkpoint_name);
         }
 
-        display_standalone_results(&results, format, detailed, None)?;
+        display_standalone_results(&results, args.format, args.detailed, None)?;
     }
 
     // Save results to file if requested
-    if let Some(output_path) = output_file {
+    if let Some(output_path) = args.output_file {
         // Implement result serialization
-        info!("💾 Saving results to: {}", output_path.display());
+        info!("[SAVE] Saving results to: {}", output_path.display());
         // This would serialize the results in the requested format
-        println!("💡 Result saving not yet implemented");
+        println!(">> Result saving not yet implemented");
     }
 
     Ok(())
@@ -484,19 +486,19 @@ fn display_standalone_results(
 ) -> Result<()> {
     match format {
         OutputFormat::Table => {
-            println!("🕵️  Standalone File Analysis Results");
-            println!("══════════════════════════════════════");
+            println!(":: Standalone File Analysis Results");
+            println!("═══════════════════════════════════════");
             println!();
 
             if let Some(comp) = comparison {
-                println!("📊 Change Summary:");
+                println!(">> Change Summary:");
                 println!("   New files: {}", comp.new_files.len());
                 println!("   Modified files: {}", comp.changed_files.len());
                 println!("   Deleted files: {}", comp.deleted_files.len());
                 println!();
             }
 
-            println!("📈 Analysis Summary:");
+            println!(">> Analysis Summary:");
             println!("   Files analyzed: {}", results.total_files);
             println!("   Total patterns: {}", results.total_detections);
             println!("   Critical issues: {}", results.critical_issues);
@@ -504,7 +506,7 @@ fn display_standalone_results(
             println!();
 
             if !results.file_results.is_empty() {
-                println!("📄 File Analysis:");
+                println!(">> File Analysis:");
                 for file_result in &results.file_results {
                     if !file_result.detections.is_empty() {
                         println!(
@@ -537,11 +539,11 @@ fn display_standalone_results(
 
             if results.critical_issues > 0 {
                 println!(
-                    "🚨 {} critical issues detected that require immediate attention",
+                    "!! {} critical issues detected that require immediate attention",
                     results.critical_issues
                 );
             } else if results.total_detections == 0 {
-                println!("✅ No issues detected! Code quality looks excellent.");
+                println!(">> No issues detected! Code quality looks excellent.");
             }
         }
 
@@ -550,7 +552,7 @@ fn display_standalone_results(
         }
 
         OutputFormat::Markdown => {
-            println!("# 🕵️ Standalone File Analysis Results");
+            println!("# Standalone File Analysis Results");
             println!();
             println!("## Summary");
             println!();
@@ -631,12 +633,12 @@ async fn handle_checkpoint_command(command: CheckpointCommands) -> Result<()> {
             paths,
             description,
         } => {
-            info!("📸 Creating checkpoint: {}", name);
+            info!(">> Creating checkpoint: {}", name);
             checkpoint_manager
                 .create_checkpoint(&name, &paths, description)
                 .await?;
             println!(
-                "✅ Checkpoint '{}' created with {} files",
+                ">> Checkpoint '{}' created with {} files",
                 name,
                 paths.len()
             );
@@ -646,18 +648,18 @@ async fn handle_checkpoint_command(command: CheckpointCommands) -> Result<()> {
             let checkpoints = checkpoint_manager.list_checkpoints().await?;
 
             if checkpoints.is_empty() {
-                println!("📝 No checkpoints found");
+                println!("[INFO] No checkpoints found");
                 return Ok(());
             }
 
             match format {
                 OutputFormat::Table => {
-                    println!("📸 Available Checkpoints");
+                    println!(":: Available Checkpoints");
                     println!("════════════════════════");
                     println!();
 
                     for checkpoint in checkpoints {
-                        println!("🏷️  {}", checkpoint.name);
+                        println!("   {}", checkpoint.name);
                         println!(
                             "   Created: {}",
                             checkpoint.timestamp.format("%Y-%m-%d %H:%M:%S")
@@ -687,7 +689,7 @@ async fn handle_checkpoint_command(command: CheckpointCommands) -> Result<()> {
 
         CheckpointCommands::Show { name, format: _ } => {
             if let Some(checkpoint) = checkpoint_manager.get_checkpoint(&name).await? {
-                println!("📸 Checkpoint: {}", checkpoint.name);
+                println!(":: Checkpoint: {}", checkpoint.name);
                 println!(
                     "Created: {}",
                     checkpoint.timestamp.format("%Y-%m-%d %H:%M:%S")
@@ -723,12 +725,12 @@ async fn handle_checkpoint_command(command: CheckpointCommands) -> Result<()> {
 
             match format {
                 OutputFormat::Table => {
-                    println!("📊 Changes since checkpoint '{}'", checkpoint);
+                    println!("[DIFF] Changes since checkpoint '{}'", checkpoint);
                     println!("═══════════════════════════════════");
                     println!();
 
                     if !comparison.new_files.is_empty() {
-                        println!("📄 New files ({}): ", comparison.new_files.len());
+                        println!("[NEW] New files ({}): ", comparison.new_files.len());
                         for file in &comparison.new_files {
                             println!("  + {}", file.display());
                         }
@@ -736,7 +738,7 @@ async fn handle_checkpoint_command(command: CheckpointCommands) -> Result<()> {
                     }
 
                     if !comparison.changed_files.is_empty() {
-                        println!("📝 Modified files ({}): ", comparison.changed_files.len());
+                        println!("[MOD] Modified files ({}): ", comparison.changed_files.len());
                         for file in &comparison.changed_files {
                             println!("  ~ {}", file.display());
                         }
@@ -744,7 +746,7 @@ async fn handle_checkpoint_command(command: CheckpointCommands) -> Result<()> {
                     }
 
                     if !comparison.deleted_files.is_empty() {
-                        println!("🗑️  Deleted files ({}): ", comparison.deleted_files.len());
+                        println!("[DEL] Deleted files ({}): ", comparison.deleted_files.len());
                         for file in &comparison.deleted_files {
                             println!("  - {}", file.display());
                         }
@@ -755,7 +757,7 @@ async fn handle_checkpoint_command(command: CheckpointCommands) -> Result<()> {
                         && comparison.changed_files.is_empty()
                         && comparison.deleted_files.is_empty()
                     {
-                        println!("✅ No changes detected since checkpoint");
+                        println!(">> No changes detected since checkpoint");
                     }
                 }
                 OutputFormat::Json => {
@@ -779,7 +781,7 @@ async fn handle_checkpoint_command(command: CheckpointCommands) -> Result<()> {
             }
 
             checkpoint_manager.delete_checkpoint(&name).await?;
-            println!("✅ Checkpoint '{}' deleted", name);
+            println!(">> Checkpoint '{}' deleted", name);
         }
     }
 
@@ -793,13 +795,15 @@ async fn handle_patterns_command(command: PatternCommands) -> Result<()> {
 
     match command {
         PatternCommands::Init { force: _ } => {
-            println!("📋 Pattern initialization available in playbooks/ directory");
-            println!("💡 Sniff uses YAML playbooks for pattern definitions");
+            println!(">> Enhanced patterns are installed in ~/.sniff/patterns/");
+            println!(">> Add custom patterns by placing YAML files in that directory");
+            println!(">> Available patterns are loaded automatically during analysis");
         }
         _ => {
-            println!("📋 Pattern management commands simplified in streamlined version");
-            println!("💡 Use playbooks/ directory for pattern definitions");
-            println!("🔍 Available patterns are loaded automatically during analysis");
+            println!("[INFO] Pattern management commands simplified in streamlined version");
+            println!("[TIP] Enhanced patterns are installed in ~/.sniff/patterns/");
+            println!("[TIP] Add custom patterns by placing YAML files in that directory");
+            println!("[TIP] Available patterns are loaded automatically during analysis");
         }
     }
 
@@ -871,4 +875,46 @@ async fn handle_verify_todo_command(
             result.critical_issues, config.max_critical_issues
         )))
     }
+}
+
+/// Ensures the .sniff directory exists and returns its path.
+fn ensure_sniff_directory() -> Result<PathBuf> {
+    let home_dir = dirs::home_dir()
+        .ok_or_else(|| SniffError::analysis_error("Cannot determine home directory"))?;
+    
+    let sniff_dir = home_dir.join(".sniff");
+    
+    if !sniff_dir.exists() {
+        fs::create_dir_all(&sniff_dir)
+            .map_err(|e| SniffError::file_system(&sniff_dir, e))?;
+        info!("Created .sniff directory at {}", sniff_dir.display());
+    }
+    
+    Ok(sniff_dir)
+}
+
+/// Installs default playbooks to the patterns directory.
+fn install_default_playbooks(patterns_dir: &PathBuf) -> Result<()> {
+    // Create patterns directory
+    fs::create_dir_all(patterns_dir)
+        .map_err(|e| SniffError::file_system(patterns_dir, e))?;
+    
+    // Get the embedded playbooks from the binary
+    let rust_patterns = include_str!("../playbooks/rust-patterns.yaml");
+    let python_patterns = include_str!("../playbooks/python-patterns.yaml");
+    let typescript_patterns = include_str!("../playbooks/typescript-patterns.yaml");
+    
+    // Write playbooks to .sniff/patterns/
+    fs::write(patterns_dir.join("rust-patterns.yaml"), rust_patterns)
+        .map_err(|e| SniffError::file_system(patterns_dir, e))?;
+    
+    fs::write(patterns_dir.join("python-patterns.yaml"), python_patterns)
+        .map_err(|e| SniffError::file_system(patterns_dir, e))?;
+    
+    fs::write(patterns_dir.join("typescript-patterns.yaml"), typescript_patterns)
+        .map_err(|e| SniffError::file_system(patterns_dir, e))?;
+    
+    info!("Installed default playbooks to {}", patterns_dir.display());
+    
+    Ok(())
 }

@@ -17,7 +17,7 @@ single-char-binding-names-threshold = 4
 literal-representation-threshold = 10
 
 # Documentation
-missing-docs-in-private-items = false
+missing-docs-in-crate-items = false
 doc-valid-idents = [
     "AI", "LLM", "GPT", "API", "JSON", "YAML", "CLI", "UUID", "JSONL",
     "TreeSitter", "Merkle", "OAuth", "JWT", "HTTP", "HTTPS", "URL", "URI",

@@ -38,15 +38,15 @@ impl Severity {
         }
     }
 
-    /// Gets the emoji representation for this severity level.
+    /// Gets the icon representation for this severity level with colors.
     #[must_use]
     pub fn emoji(&self) -> &'static str {
         match self {
-            Severity::Info => "ℹ️",
-            Severity::Low => "🟢",
-            Severity::Medium => "🟡",
-            Severity::High => "🔴",
-            Severity::Critical => "🚨",
+            Severity::Info => "\x1b[94m▪\x1b[0m",       // Blue small square
+            Severity::Low => "\x1b[92m▪\x1b[0m",        // Green small square
+            Severity::Medium => "\x1b[93m▪\x1b[0m",     // Yellow small square  
+            Severity::High => "\x1b[91m▪\x1b[0m",       // Red small square
+            Severity::Critical => "\x1b[91m▪\x1b[0m",   // Bright red small square
         }
     }
 
