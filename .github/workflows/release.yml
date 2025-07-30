@@ -35,26 +35,25 @@ jobs:
           body: |
             ## Sniff ${{ steps.get_version.outputs.VERSION }}
             
-            AI misalignment pattern detection for code quality assurance.
+            Code quality analysis tool that detects AI-generated deception patterns and provides quality gates.
             
             ### Features
-            - 🔍 Detects AI-generated code deceptions and placeholders
-            - 🌐 Multi-language support (Rust, Python, TypeScript)
-            - 🔄 Claude Code session integration
-            - 📁 Standalone file analysis
-            - 📚 Extensible pattern library system
-            - 🎯 Real-time monitoring capabilities
+            - [ANALYSIS] File analysis for code quality issues and misalignment patterns
+            - [VERIFY] TODO verification with quality gates
+            - [CHECKPOINT] Change tracking and diff analysis
+            - [PATTERNS] Extensible pattern management system
+            - [MULTI-LANG] Support for Rust, Python, TypeScript, JavaScript, Go, C/C++
             
             ### Installation
             
             #### From GitHub Releases
             ```bash
             # Linux/macOS
-            curl -L https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.VERSION }}/sniff-$(uname -s)-$(uname -m).tar.gz | tar xz
+            curl -L https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.VERSION }}/sniff-${{ steps.get_version.outputs.VERSION }}-$(uname -s)-$(uname -m).tar.gz | tar xz
             sudo mv sniff /usr/local/bin/
             
             # Windows (PowerShell)
-            Invoke-WebRequest -Uri "https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.VERSION }}/sniff-Windows-x86_64.zip" -OutFile "sniff.zip"
+            Invoke-WebRequest -Uri "https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.VERSION }}/sniff-${{ steps.get_version.outputs.VERSION }}-Windows-x86_64.zip" -OutFile "sniff.zip"
             Expand-Archive -Path "sniff.zip" -DestinationPath "."
             ```
             
@@ -63,16 +62,25 @@ jobs:
             brew install ${{ github.repository_owner }}/tap/sniff
             ```
             
+            #### From Cargo
+            ```bash
+            cargo install sniff
+            ```
+            
             ### Usage
             ```bash
-            # Analyze files for misalignment patterns
-            sniff analyze-files src/
+            # Analyze files for code quality issues
+            sniff analyze-files src/ --format table --detailed
             
-            # Monitor Claude Code sessions
-            sniff monitor --session-id <session-id>
+            # Verify TODO completion with quality gates
+            sniff verify-todo TODO-123 --files src/auth.rs --min-quality 80
             
-            # Learn from community patterns
-            sniff learn-patterns --source community
+            # Create and manage checkpoints
+            sniff checkpoint create "before-refactor" src/
+            sniff checkpoint diff "before-refactor" --paths src/
+            
+            # Manage pattern library
+            sniff patterns list
             ```
             
             See [README.md](https://github.com/${{ github.repository }}/blob/main/README.md) for detailed documentation.
@@ -233,7 +241,7 @@ jobs:
               "version": "${{ steps.get_version.outputs.VERSION }}",
               "url": "https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.VERSION }}/sniff-${{ steps.get_version.outputs.VERSION }}-x86_64-apple-darwin.tar.gz",
               "sha256": "${{ steps.calculate_sha.outputs.SHA256 }}",
-              "description": "AI misalignment pattern detection for code quality assurance"
+              "description": "Code quality analysis tool that detects AI-generated deception patterns"
             }
 
   publish-crates-io:
