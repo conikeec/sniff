@@ -6,7 +6,7 @@ authors = ["Chetan Conikee <conikee@gmail.com>"]
 license = "MIT"
 description = "AI bullshit detector - sniff out incomplete code and false completion claims"
 repository = "https://github.com/chetanconikee/sniff"
-keywords = ["cli", "ai", "code-analysis", "bullshit-detector", "treesitter"]
+keywords = ["cli", "ai", "code-analysis", "mislaignment-detector", "treesitter"]
 categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]

@@ -1,0 +1,31 @@
+# Clippy configuration for Sniff
+# See: https://doc.rust-lang.org/clippy/configuration.html
+
+# Complexity thresholds
+cognitive-complexity-threshold = 30
+type-complexity-threshold = 250
+too-many-arguments-threshold = 7
+too-many-lines-threshold = 150
+large-error-threshold = 128
+
+# Performance
+vec-box-size-threshold = 4096
+trivial-copy-size-limit = 128
+
+# Style preferences
+single-char-binding-names-threshold = 4
+literal-representation-threshold = 10
+
+# Documentation
+missing-docs-in-private-items = false
+doc-valid-idents = [
+    "AI", "LLM", "GPT", "API", "JSON", "YAML", "CLI", "UUID", "JSONL",
+    "TreeSitter", "Merkle", "OAuth", "JWT", "HTTP", "HTTPS", "URL", "URI",
+    "Rust", "Python", "TypeScript", "JavaScript", "WebAssembly", "WASM",
+    "GitHub", "GitLab", "BitBucket", "VS", "VSCode", "Claude", "Anthropic"
+]
+
+# Avoid false positives
+avoid-breaking-exported-api = true
+allow-expect-in-tests = true
+allow-unwrap-in-tests = true

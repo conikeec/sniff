@@ -1,8 +1,8 @@
-name: "TypeScript Bullshit Detection Patterns"
+name: "TypeScript Misalignment Detection Patterns"
 version: "1.0.0"
 language: "typescript"
 author: "Sniff Core Team"
-description: "Comprehensive bullshit detection patterns for TypeScript/JavaScript code"
+description: "Comprehensive misalignment detection patterns for TypeScript/JavaScript code"
 
 rules:
   - id: "ts_throw_not_implemented"
@@ -125,6 +125,133 @@ rules:
     examples:
       - "console.log('DEBUG:', value);"
       - "console.log('trace entering function');"
+    false_positives: []
+
+  - id: "ts_premature_return_null"
+    name: "Premature Return Null/Undefined"
+    description: "Function returns null/undefined without doing actual work"
+    severity: "High"
+    pattern_type: !Regex
+      pattern: "return\\s+(?:null|undefined)\\s*(?:;\\s*)?(?://.*(?:for now|temporary|placeholder|stub)|$)"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["premature_return", "fake_success", "ai_patterns"]
+    examples:
+      - "return null; // For now"
+      - "return undefined; // Placeholder"
+      - "return null  // Temporary implementation"
+    false_positives: []
+
+  - id: "ts_fake_authentication"
+    name: "Fake Authentication Logic"
+    description: "Authentication that always returns true or uses placeholder logic"
+    severity: "Critical"
+    pattern_type: !Regex
+      pattern: "(?:authenticate|verify|check|validate).*(?:return\\s+true|true\\s*(?://.*(?:for now|temporary|placeholder|fake)|;|$))"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["security", "authentication", "fake_logic", "ai_patterns"]
+    examples:
+      - "function authenticate() { return true; } // For now"
+      - "return true; // Placeholder auth"
+      - "authenticated = true; // Fake validation"
+    false_positives: []
+
+  - id: "ts_settimeout_as_implementation"
+    name: "setTimeout as Implementation"
+    description: "Using setTimeout/delay instead of actual implementation"
+    severity: "High"
+    pattern_type: !Regex
+      pattern: "(?:setTimeout|delay)\\s*\\([^,)]+(?:,\\s*[^)]+)?\\)\\s*(?://.*(?:simulate|mock|fake|placeholder|for now)|;)"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["fake_async", "timeout", "placeholder", "ai_patterns"]
+    examples:
+      - "setTimeout(() => {}, 1000); // Simulate work"
+      - "delay(500); // Placeholder for processing"
+      - "setTimeout(resolve, 2000); // Mock async work"
+    false_positives: []
+
+  - id: "ts_error_suppression"
+    name: "Silent Error Suppression"
+    description: "Catching errors and ignoring them"
+    severity: "High"
+    pattern_type: !Regex
+      pattern: "catch\\s*\\([^)]*\\)\\s*\\{\\s*(?://.*(?:ignore|suppress|silence|todo)|\\}|console\\.log\\([^)]*\\);?\\s*\\})"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["error_handling", "suppression", "ai_patterns"]
+    examples:
+      - "catch (e) { // Ignore errors }"
+      - "catch (error) { console.log(error); }"
+      - "catch (_) {}"
+    false_positives: []
+
+  - id: "ts_mock_data_return"
+    name: "Mock Data Return"
+    description: "Functions returning hardcoded mock/test data"
+    severity: "Medium"
+    pattern_type: !Regex
+      pattern: "return\\s+(?:\\[.*\\]|\\{.*\\}|[\"'][^\"']*(?:test|mock|fake|sample|dummy)[^\"']*[\"']|\\d+)\\s*(?:;\\s*)?(?://.*(?:mock|fake|test|sample|dummy|placeholder)|$)"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["mock_data", "fake_return", "ai_patterns"]
+    examples:
+      - "return [1, 2, 3]; // Mock data"
+      - "return 'test_user'; // Placeholder"
+      - "return 0; // Dummy value"
+    false_positives: []
+
+  - id: "ts_generic_error_messages"
+    name: "Generic Error Messages"
+    description: "Non-descriptive error messages that don't help debugging"
+    severity: "Medium"
+    pattern_type: !Regex
+      pattern: "(?:throw|Error|new\\s+Error)\\s*\\(\\s*[\"'](?:error|failed|something went wrong|oops|todo|fixme)[\"']\\s*\\)"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["error_handling", "generic", "unhelpful", "ai_patterns"]
+    examples:
+      - "throw new Error('error')"
+      - "throw Error('failed')"
+      - "throw new Error('something went wrong')"
+    false_positives: []
+
+  - id: "ts_promise_resolve_placeholder"
+    name: "Promise Resolve Placeholder"
+    description: "Promises that resolve with placeholder values"
+    severity: "Medium"
+    pattern_type: !Regex
+      pattern: "(?:Promise\\.resolve|resolve)\\s*\\(\\s*(?:null|undefined|0|''|\\[\\]|\\{\\})\\s*\\)\\s*(?://.*(?:placeholder|temporary|for now|stub)|;|$)"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["promise", "placeholder", "fake_async", "ai_patterns"]
+    examples:
+      - "return Promise.resolve(null); // Placeholder"
+      - "resolve([]); // For now"
+      - "Promise.resolve(0) // Temporary"
+    false_positives: []
+
+  - id: "ts_copy_paste_patterns"
+    name: "Copy-Paste Code Patterns"
+    description: "Repeated code blocks without abstraction"
+    severity: "Low"
+    pattern_type: !Regex
+      pattern: "(?://\\s*(?:same as above|copy of|duplicate|repeated|clone))"
+      flags: "i"
+    scope: "Comments"
+    enabled: true
+    tags: ["duplication", "copy_paste", "ai_patterns"]
+    examples:
+      - "// Same as above function"
+      - "// Copy of the previous implementation"
+      - "// Duplicate logic - should refactor"
     false_positives: []
 
 metadata:

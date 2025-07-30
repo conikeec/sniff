@@ -4,7 +4,7 @@
 //! Merkle tree implementation for Claude Code session data.
 //!
 //! This module provides a hierarchical Merkle tree structure for organizing
-//! and verifying Claude Code session data with cryptographic integrity.
+//! and verifying Claude Code session data with integrity.
 
 #![allow(clippy::bool_to_int_with_if)]
 #![allow(clippy::implicit_hasher)]

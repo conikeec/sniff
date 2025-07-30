@@ -113,7 +113,7 @@ enum Commands {
         detailed: bool,
     },
 
-    /// Analyze Claude Code sessions for bullshit patterns
+    /// Analyze Claude Code sessions for misalignment patterns
     Analyze {
         /// Specific session file to analyze (optional, analyzes all if not provided)
         #[arg(short, long)]
@@ -129,7 +129,7 @@ enum Commands {
         detailed: bool,
     },
 
-    /// Analyze arbitrary files for bullshit patterns (independent of Claude Code)
+    /// Analyze arbitrary files for misalignment patterns (independent of Claude Code)
     AnalyzeFiles {
         /// Files or directories to analyze
         #[arg(required = true)]
@@ -164,6 +164,12 @@ enum Commands {
         /// Compare against previous checkpoint
         #[arg(long)]
         diff_checkpoint: Option<String>,
+        /// Include test files in analysis (by default test files are excluded)
+        #[arg(long)]
+        include_tests: bool,
+        /// Confidence threshold for test file detection (0.0-1.0)
+        #[arg(long, default_value = "0.3")]
+        test_confidence: f64,
     },
 
     /// Manage analysis checkpoints for tracking changes over time
@@ -178,10 +184,32 @@ enum Commands {
         command: DbCommands,
     },
 
-    /// Manage learned patterns for dynamic bullshit detection
+    /// Manage learned patterns for dynamic misalignment detection
     Patterns {
         #[command(subcommand)]
         command: PatternCommands,
+    },
+
+    /// Verify TODO completion with sniff analysis
+    VerifyTodo {
+        /// TODO ID to verify
+        #[arg(short, long)]
+        todo_id: String,
+        /// Files to analyze for this TODO
+        #[arg(short, long)]
+        files: Vec<PathBuf>,
+        /// Minimum quality score required (0-100)
+        #[arg(long, default_value = "80")]
+        min_quality_score: f64,
+        /// Maximum critical issues allowed
+        #[arg(long, default_value = "0")]
+        max_critical_issues: usize,
+        /// Output format
+        #[arg(long, default_value = "table")]
+        format: OutputFormat,
+        /// Use Git to discover changed files (prevents agent deception)
+        #[arg(long)]
+        git_discovery: bool,
     },
 
     /// Legacy commands (for backward compatibility)
@@ -434,6 +462,8 @@ async fn main() -> Result<()> {
             output_file,
             checkpoint,
             diff_checkpoint,
+            include_tests,
+            test_confidence,
         } => {
             handle_analyze_files_command(
                 paths,
@@ -447,6 +477,8 @@ async fn main() -> Result<()> {
                 output_file,
                 checkpoint,
                 diff_checkpoint,
+                include_tests,
+                test_confidence,
             )
             .await
         }
@@ -456,6 +488,18 @@ async fn main() -> Result<()> {
         Commands::Db { command } => handle_db_command(database_path, command).await,
 
         Commands::Patterns { command } => handle_patterns_command(command).await,
+
+        Commands::VerifyTodo {
+            todo_id,
+            files,
+            min_quality_score,
+            max_critical_issues,
+            format,
+            git_discovery,
+        } => {
+            handle_verify_todo_command(todo_id, files, min_quality_score, max_critical_issues, format, git_discovery)
+                .await
+        }
 
         // Legacy command for backward compatibility
         Commands::Parse {
@@ -1256,7 +1300,7 @@ fn expand_path(path: PathBuf) -> PathBuf {
     }
 }
 
-/// Handles the analyze command - analyzes Claude Code sessions for bullshit patterns.
+/// Handles the analyze command - analyzes Claude Code sessions for misalignment patterns.
 async fn handle_analyze_command(
     projects_path: PathBuf,
     session_file: Option<PathBuf>,
@@ -1266,7 +1310,7 @@ async fn handle_analyze_command(
 ) -> Result<()> {
     use sniff::SimpleSessionAnalyzer;
 
-    info!("🕵️  Starting bullshit analysis of Claude Code sessions");
+    info!("🕵️  Starting misalignment analysis of Claude Code sessions");
 
     // Create the session analyzer (use quiet mode for non-table formats)
     let mut analyzer = if format == OutputFormat::Table {
@@ -1400,7 +1444,7 @@ fn display_table_format(analyses: &[SimpleSessionAnalysis], detailed: bool) {
         .sum::<usize>();
     let total_patterns = analyses
         .iter()
-        .map(|a| a.metrics.total_bullshit_patterns)
+        .map(|a| a.metrics.total_misalignment_patterns)
         .sum::<usize>();
     let critical_patterns = analyses
         .iter()
@@ -1443,23 +1487,23 @@ fn display_table_format(analyses: &[SimpleSessionAnalysis], detailed: bool) {
     if !analyses.is_empty()
         && analyses
             .iter()
-            .any(|a| !a.bullshit_detections.is_empty() || !a.recommendations.is_empty())
+            .any(|a| !a.misalignment_detections.is_empty() || !a.recommendations.is_empty())
     {
         println!("📄 Session Analysis:");
         for analysis in analyses {
-            if !analysis.bullshit_detections.is_empty() || !analysis.recommendations.is_empty() {
+            if !analysis.misalignment_detections.is_empty() || !analysis.recommendations.is_empty() {
                 println!("   Session: {}", analysis.session_id);
                 println!("      Files: {}", analysis.modified_files.len());
                 println!("      Operations: {}", analysis.file_operations.len());
                 println!(
                     "      Patterns: {}",
-                    analysis.metrics.total_bullshit_patterns
+                    analysis.metrics.total_misalignment_patterns
                 );
                 println!("      Quality: {:.1}%", analysis.metrics.quality_score);
 
-                if !analysis.bullshit_detections.is_empty() {
+                if !analysis.misalignment_detections.is_empty() {
                     println!("      Issues:");
-                    for detection in &analysis.bullshit_detections {
+                    for detection in &analysis.misalignment_detections {
                         println!(
                             "         {} {} ({}:{}): {}",
                             detection.severity.emoji(),
@@ -1516,7 +1560,7 @@ fn display_table_format(analyses: &[SimpleSessionAnalysis], detailed: bool) {
             );
         }
     } else {
-        println!("✅ No bullshit patterns detected! Excellent work!");
+        println!("✅ No misalignment patterns detected! Excellent work!");
     }
 }
 
@@ -1532,7 +1576,7 @@ fn display_markdown_format(analyses: &[SimpleSessionAnalysis], detailed: bool) {
         .sum::<usize>();
     let total_patterns = analyses
         .iter()
-        .map(|a| a.metrics.total_bullshit_patterns)
+        .map(|a| a.metrics.total_misalignment_patterns)
         .sum::<usize>();
     let critical_patterns = analyses
         .iter()
@@ -1579,27 +1623,27 @@ fn display_markdown_format(analyses: &[SimpleSessionAnalysis], detailed: bool) {
     if !analyses.is_empty()
         && analyses
             .iter()
-            .any(|a| !a.bullshit_detections.is_empty() || !a.recommendations.is_empty())
+            .any(|a| !a.misalignment_detections.is_empty() || !a.recommendations.is_empty())
     {
         println!("## 📄 Session Analysis");
         println!();
         for analysis in analyses {
-            if !analysis.bullshit_detections.is_empty() || !analysis.recommendations.is_empty() {
+            if !analysis.misalignment_detections.is_empty() || !analysis.recommendations.is_empty() {
                 println!("### Session: `{}`", analysis.session_id);
                 println!();
                 println!("- **Files**: {}", analysis.modified_files.len());
                 println!("- **Operations**: {}", analysis.file_operations.len());
                 println!(
                     "- **Patterns**: {}",
-                    analysis.metrics.total_bullshit_patterns
+                    analysis.metrics.total_misalignment_patterns
                 );
                 println!("- **Quality**: {:.1}%", analysis.metrics.quality_score);
                 println!();
 
-                if !analysis.bullshit_detections.is_empty() {
+                if !analysis.misalignment_detections.is_empty() {
                     println!("#### Issues");
                     println!();
-                    for detection in &analysis.bullshit_detections {
+                    for detection in &analysis.misalignment_detections {
                         println!(
                             "- {} **{}** (`{}:{}`):",
                             detection.severity.emoji(),
@@ -1666,7 +1710,7 @@ fn display_markdown_format(analyses: &[SimpleSessionAnalysis], detailed: bool) {
     } else {
         println!("## ✅ Results");
         println!();
-        println!("**No bullshit patterns detected! Excellent work!**");
+        println!("**No misalignment patterns detected! Excellent work!**");
     }
 }
 
@@ -1676,7 +1720,7 @@ fn display_compact_format(analyses: &[SimpleSessionAnalysis]) {
             "{}: {} files, {} patterns, {:.1}% quality",
             analysis.session_id,
             analysis.modified_files.len(),
-            analysis.metrics.total_bullshit_patterns,
+            analysis.metrics.total_misalignment_patterns,
             analysis.metrics.quality_score
         );
     }
@@ -2055,7 +2099,7 @@ async fn handle_patterns_command(command: PatternCommands) -> Result<()> {
     }
 }
 
-/// Handles the analyze-files command - analyzes arbitrary files for bullshit patterns.
+/// Handles the analyze-files command - analyzes arbitrary files for misalignment patterns.
 #[allow(clippy::too_many_arguments)]
 async fn handle_analyze_files_command(
     paths: Vec<PathBuf>,
@@ -2069,8 +2113,10 @@ async fn handle_analyze_files_command(
     output_file: Option<PathBuf>,
     checkpoint: Option<String>,
     diff_checkpoint: Option<String>,
+    include_tests: bool,
+    test_confidence: f64,
 ) -> Result<()> {
-    use sniff::analysis::BullshitAnalyzer;
+    use sniff::analysis::MisalignmentAnalyzer;
     use sniff::standalone::{AnalysisConfig, CheckpointManager, FileFilter, StandaloneAnalyzer};
 
     info!("🕵️  Starting standalone file analysis");
@@ -2087,6 +2133,8 @@ async fn handle_analyze_files_command(
         allowed_extensions,
         exclude_pattern: exclude,
         max_file_size_bytes: (max_file_size_mb * 1024.0 * 1024.0) as u64,
+        include_test_files: include_tests,
+        test_confidence_threshold: test_confidence,
     };
 
     // Create analysis config
@@ -2108,9 +2156,26 @@ async fn handle_analyze_files_command(
         detailed_analysis: detailed,
     };
 
-    // Initialize analyzer
-    let bullshit_analyzer = BullshitAnalyzer::new()?;
-    let mut analyzer = StandaloneAnalyzer::new(bullshit_analyzer, config);
+    // Initialize analyzer with learned patterns and playbooks
+    let current_dir = std::env::current_dir().map_err(|e| SniffError::file_system(".", e))?;
+    let mut misalignment_analyzer = match MisalignmentAnalyzer::new_with_learned_patterns(&current_dir) {
+        Ok(analyzer) => analyzer,
+        Err(e) => {
+            warn!("Failed to load learned patterns: {}, falling back to default patterns", e);
+            MisalignmentAnalyzer::new()?
+        }
+    };
+    
+    // Also load playbooks from the playbooks directory
+    let playbook_dir = current_dir.join("playbooks");
+    if playbook_dir.exists() {
+        if let Err(e) = misalignment_analyzer.load_playbooks(&playbook_dir) {
+            warn!("Failed to load playbooks from {}: {}", playbook_dir.display(), e);
+        } else {
+            info!("Loaded enhanced playbooks from {}", playbook_dir.display());
+        }
+    }
+    let mut analyzer = StandaloneAnalyzer::new(misalignment_analyzer, config);
 
     // Handle checkpoint comparison if requested
     if let Some(checkpoint_name) = diff_checkpoint {
@@ -2343,6 +2408,73 @@ async fn handle_checkpoint_command(command: CheckpointCommands) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Handles the verify-todo command - verifies TODO completion with sniff analysis.
+async fn handle_verify_todo_command(
+    todo_id: String,
+    files: Vec<PathBuf>,
+    min_quality_score: f64,
+    max_critical_issues: usize,
+    format: OutputFormat,
+    git_discovery: bool,
+) -> Result<()> {
+    use sniff::verify_todo::{verify_todo, display_verification_result, VerificationConfig};
+
+    let config = VerificationConfig {
+        min_quality_score,
+        max_critical_issues,
+        include_test_files: false, // Exclude test files by default for quality verification
+    };
+
+    // Use git discovery if requested, otherwise use provided files
+    let actual_files = if git_discovery {
+        match sniff::verify_todo::discover_git_changes() {
+            Ok(git_files) => {
+                if git_files != files {
+                    println!("Git discovery found {} files vs {} reported", git_files.len(), files.len());
+                    println!("Using git-discovered files for verification");
+                }
+                git_files
+            }
+            Err(e) => {
+                eprintln!("Git discovery failed: {}, using reported files", e);
+                files
+            }
+        }
+    } else {
+        files
+    };
+
+    let result = verify_todo(&todo_id, &actual_files, config.clone()).await?;
+
+    match format {
+        OutputFormat::Json => {
+            let verification_result = serde_json::json!({
+                "todo_id": todo_id,
+                "verification_passed": result.passed,
+                "quality_score": result.quality_score,
+                "min_quality_required": config.min_quality_score,
+                "critical_issues": result.critical_issues,
+                "max_critical_allowed": config.max_critical_issues,
+                "analysis_results": result.analysis_results
+            });
+            println!("{}", serde_json::to_string_pretty(&verification_result)?);
+        }
+        _ => {
+            display_verification_result(&todo_id, &result, &config);
+        }
+    }
+
+    if result.passed {
+        Ok(())
+    } else {
+        Err(SniffError::analysis_error(format!(
+            "TODO '{}' failed verification: quality {:.1}% < {:.1}%, critical issues {} > {}",
+            todo_id, result.quality_score, config.min_quality_score, 
+            result.critical_issues, config.max_critical_issues
+        )))
+    }
 }
 
 /// Displays standalone analysis results.

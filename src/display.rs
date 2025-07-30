@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Chetan Conikee <conikee@gmail.com>
 // Licensed under the MIT License
 
-//! Enhanced display formatting for bullshit detection results.
+//! Enhanced display formatting for misalignment detection results.
 
 #![allow(clippy::format_push_string)]
 #![allow(clippy::format_in_format_args)]
@@ -9,14 +9,14 @@
 #![allow(clippy::trivially_copy_pass_by_ref)]
 #![allow(clippy::match_same_arms)]
 
-use crate::analysis::{BullshitDetection, ContextLines};
+use crate::analysis::{MisalignmentDetection, ContextLines};
 use crate::playbook::Severity;
 use colored::{Color, Colorize};
 use console::Term;
 use std::path::Path;
 
-/// Enhanced formatter for bullshit detection results.
-pub struct BullshitDisplayFormatter {
+/// Enhanced formatter for misalignment detection results.
+pub struct MisalignmentDisplayFormatter {
     /// Whether to use colors in output.
     use_colors: bool,
     /// Whether to show context lines.
@@ -25,13 +25,13 @@ pub struct BullshitDisplayFormatter {
     term: Term,
 }
 
-impl Default for BullshitDisplayFormatter {
+impl Default for MisalignmentDisplayFormatter {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl BullshitDisplayFormatter {
+impl MisalignmentDisplayFormatter {
     /// Creates a new display formatter.
     #[must_use]
     pub fn new() -> Self {
@@ -55,7 +55,7 @@ impl BullshitDisplayFormatter {
 
     /// Formats a single bullshit detection with enhanced display.
     #[must_use]
-    pub fn format_detection(&self, detection: &BullshitDetection) -> String {
+    pub fn format_detection(&self, detection: &MisalignmentDetection) -> String {
         let term_width = self.get_current_terminal_width();
 
         // For very narrow terminals, use minimal format
@@ -90,7 +90,7 @@ impl BullshitDisplayFormatter {
     }
 
     /// Formats a single detection for very narrow terminals.
-    fn format_detection_minimal(&self, detection: &BullshitDetection) -> String {
+    fn format_detection_minimal(&self, detection: &MisalignmentDetection) -> String {
         let severity_icon = self.get_severity_icon(&detection.severity);
         let line_info = format!("L{}", detection.line_number);
 
@@ -114,7 +114,7 @@ impl BullshitDisplayFormatter {
     }
 
     /// Formats the header with severity and rule information.
-    fn format_header(&self, detection: &BullshitDetection) -> String {
+    fn format_header(&self, detection: &MisalignmentDetection) -> String {
         let severity_icon = self.get_severity_icon(&detection.severity);
         let severity_color = self.get_severity_color(&detection.severity);
 
@@ -130,7 +130,7 @@ impl BullshitDisplayFormatter {
     }
 
     /// Formats the file location information.
-    fn format_location(&self, detection: &BullshitDetection) -> String {
+    fn format_location(&self, detection: &MisalignmentDetection) -> String {
         let file_name = Path::new(&detection.file_path)
             .file_name()
             .and_then(|name| name.to_str())
@@ -155,7 +155,7 @@ impl BullshitDisplayFormatter {
     fn format_code_context(
         &self,
         context: &ContextLines,
-        _detection: &BullshitDetection,
+        _detection: &MisalignmentDetection,
     ) -> String {
         let mut output = String::new();
         let term_width = self.get_current_terminal_width();
@@ -233,7 +233,7 @@ impl BullshitDisplayFormatter {
     }
 
     /// Formats a code snippet with context lines.
-    fn format_simple_snippet(&self, detection: &BullshitDetection) -> String {
+    fn format_simple_snippet(&self, detection: &MisalignmentDetection) -> String {
         // Try to get context lines from the detection first
         if let Some(context) = &detection.context_lines {
             return self.format_code_context(context, detection);
@@ -297,7 +297,7 @@ impl BullshitDisplayFormatter {
     }
 
     /// Formats the description and any recommendations.
-    fn format_description(&self, detection: &BullshitDetection) -> String {
+    fn format_description(&self, detection: &MisalignmentDetection) -> String {
         let mut output = String::new();
 
         if self.use_colors {
@@ -418,7 +418,7 @@ impl BullshitDisplayFormatter {
 
     /// Formats multiple detections adaptively based on terminal width.
     #[must_use]
-    pub fn format_detections_adaptive(&self, detections: &[BullshitDetection]) -> String {
+    pub fn format_detections_adaptive(&self, detections: &[MisalignmentDetection]) -> String {
         let term_width = self.get_current_terminal_width();
 
         // Determine layout based on terminal width
@@ -432,7 +432,7 @@ impl BullshitDisplayFormatter {
     }
 
     /// Minimal format for very narrow terminals (< 60 chars).
-    fn format_detections_minimal(&self, detections: &[BullshitDetection]) -> String {
+    fn format_detections_minimal(&self, detections: &[MisalignmentDetection]) -> String {
         let mut output = String::new();
 
         for detection in detections {
@@ -462,7 +462,7 @@ impl BullshitDisplayFormatter {
     }
 
     /// Compact format for medium terminals (60-100 chars).
-    fn format_detections_compact(&self, detections: &[BullshitDetection]) -> String {
+    fn format_detections_compact(&self, detections: &[MisalignmentDetection]) -> String {
         let mut output = String::new();
 
         for detection in detections {
@@ -474,7 +474,7 @@ impl BullshitDisplayFormatter {
     }
 
     /// Beautiful individual detection format with boxes.
-    fn format_detection_beautiful(&self, detection: &BullshitDetection) -> String {
+    fn format_detection_beautiful(&self, detection: &MisalignmentDetection) -> String {
         let mut output = String::new();
 
         // Severity and rule header
@@ -505,7 +505,7 @@ impl BullshitDisplayFormatter {
     }
 
     /// Full format for wide terminals (>= 100 chars).
-    fn format_detections_full(&self, detections: &[BullshitDetection]) -> String {
+    fn format_detections_full(&self, detections: &[MisalignmentDetection]) -> String {
         let mut output = String::new();
 
         for detection in detections {
@@ -521,7 +521,7 @@ impl BullshitDisplayFormatter {
     pub fn format_file_summary_adaptive(
         &self,
         file_path: &str,
-        detections: &[BullshitDetection],
+        detections: &[MisalignmentDetection],
     ) -> String {
         let term_width = self.get_current_terminal_width();
 
@@ -565,7 +565,7 @@ impl BullshitDisplayFormatter {
     #[must_use]
     pub fn format_summary_tree(
         &self,
-        file_summaries: &[(String, Vec<BullshitDetection>)],
+        file_summaries: &[(String, Vec<MisalignmentDetection>)],
     ) -> String {
         let mut output = String::new();
 

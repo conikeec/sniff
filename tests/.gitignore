@@ -1,0 +1,20 @@
+# Temporary test outputs
+*.tmp
+*.temp
+test_output_*
+analysis_report_*
+
+# Generated test files
+*_generated.rs
+*_generated.py
+*_generated.ts
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db

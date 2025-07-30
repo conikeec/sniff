@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Chetan Conikee <conikee@gmail.com>
 // Licensed under the MIT License
 
-//! Code analysis using rust-treesitter-agent-code-utility for AI bullshit detection.
+//! Code analysis using rust-treesitter-agent-code-utility for AI misalignment detection.
 
 #![allow(clippy::unused_self)]
 #![allow(clippy::too_many_lines)]
@@ -94,9 +94,9 @@ impl SupportedLanguage {
     }
 }
 
-/// Represents a detected bullshit pattern in code.
+/// Represents a detected misalignment pattern in code.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct BullshitDetection {
+pub struct MisalignmentDetection {
     /// The rule that triggered this detection.
     pub rule_id: String,
     /// Human-readable name of the rule.
@@ -127,9 +127,9 @@ pub struct BullshitDetection {
 
 /// Enhanced analysis result that includes performance metrics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EnhancedBullshitAnalysis {
+pub struct EnhancedMisalignmentAnalysis {
     /// Basic bullshit detections
-    pub detections: Vec<BullshitDetection>,
+    pub detections: Vec<MisalignmentDetection>,
     /// Performance analysis results (simplified for serialization)
     pub performance_score: u8,
     /// Performance recommendations
@@ -924,8 +924,8 @@ pub struct SemanticContextResult {
     pub complexity_indicators: Vec<String>,
 }
 
-/// Analyzes code for bullshit patterns using rust-treesitter-agent-code-utility.
-pub struct BullshitAnalyzer {
+/// Analyzes code for misalignment patterns using rust-treesitter-agent-code-utility.
+pub struct MisalignmentAnalyzer {
     /// The codebase analyzer from rust-treesitter-agent-code-utility.
     codebase_analyzer: CodebaseAnalyzer,
     /// AI analyzer for enhanced insights.
@@ -950,7 +950,7 @@ pub struct BullshitAnalyzer {
     test_classifier: TestFileClassifier,
 }
 
-impl BullshitAnalyzer {
+impl MisalignmentAnalyzer {
     /// Creates a new bullshit analyzer.
     ///
     /// # Errors
@@ -1183,7 +1183,7 @@ impl BullshitAnalyzer {
     /// # Errors
     ///
     /// Returns an error if the file cannot be read or analyzed.
-    pub fn analyze_file(&mut self, file_path: &Path) -> Result<Vec<BullshitDetection>> {
+    pub fn analyze_file(&mut self, file_path: &Path) -> Result<Vec<MisalignmentDetection>> {
         // Use the codebase analyzer to analyze the file
         let analysis_result = self
             .codebase_analyzer
@@ -1204,7 +1204,7 @@ impl BullshitAnalyzer {
     /// # Errors
     ///
     /// Returns an error if the directory cannot be read or analyzed.
-    pub fn analyze_directory(&mut self, dir_path: &Path) -> Result<Vec<BullshitDetection>> {
+    pub fn analyze_directory(&mut self, dir_path: &Path) -> Result<Vec<MisalignmentDetection>> {
         // Use the codebase analyzer to analyze the directory
         let analysis_result = self
             .codebase_analyzer
@@ -1225,7 +1225,7 @@ impl BullshitAnalyzer {
     /// # Errors
     ///
     /// Returns an error if the file cannot be read or analyzed.
-    pub fn analyze_file_enhanced(&mut self, file_path: &Path) -> Result<EnhancedBullshitAnalysis> {
+    pub fn analyze_file_enhanced(&mut self, file_path: &Path) -> Result<EnhancedMisalignmentAnalysis> {
         // Use the codebase analyzer to analyze the file
         let analysis_result = self
             .codebase_analyzer
@@ -1285,7 +1285,7 @@ impl BullshitAnalyzer {
         let quality_assessment =
             self.calculate_quality_assessment_simple(&enhanced_detections, performance_score);
 
-        Ok(EnhancedBullshitAnalysis {
+        Ok(EnhancedMisalignmentAnalysis {
             detections: enhanced_detections,
             performance_score,
             performance_recommendations,
@@ -1296,7 +1296,7 @@ impl BullshitAnalyzer {
     /// Assesses performance impact for a bullshit detection (simplified version).
     #[allow(clippy::too_many_lines)]
     fn assess_performance_impact_simple(
-        detection: &BullshitDetection,
+        detection: &MisalignmentDetection,
         performance_result: &PerformanceAnalysisResult,
     ) -> PerformanceImpact {
         // Assess impact based on detection type and context
@@ -1425,7 +1425,7 @@ impl BullshitAnalyzer {
     #[allow(clippy::too_many_lines)]
     #[allow(clippy::cast_precision_loss)]
     fn calculate_quality_assessment(
-        detections: &[BullshitDetection],
+        detections: &[MisalignmentDetection],
         complexity_metrics: &HashMap<String, ComplexityMetrics>,
         performance_metrics: &HashMap<String, PerformanceAnalysisResult>,
     ) -> QualityAssessment {
@@ -1568,7 +1568,7 @@ impl BullshitAnalyzer {
     /// Calculates simplified quality assessment based on detections and performance score.
     fn calculate_quality_assessment_simple(
         &self,
-        detections: &[BullshitDetection],
+        detections: &[MisalignmentDetection],
         performance_score: u8,
     ) -> QualityAssessment {
         let mut maintainability_score: f64 = 100.0;
@@ -1726,11 +1726,11 @@ impl BullshitAnalyzer {
     /// # Errors
     ///
     /// Returns an error if any file cannot be read or analyzed.
-    pub fn analyze_files_parallel(&self, file_paths: &[&Path]) -> Result<Vec<BullshitDetection>> {
+    pub fn analyze_files_parallel(&self, file_paths: &[&Path]) -> Result<Vec<MisalignmentDetection>> {
         // Create a thread-safe collection of all detections
         let all_detections: std::result::Result<Vec<_>, SniffError> = file_paths
             .par_iter()
-            .map(|&file_path| -> Result<Vec<BullshitDetection>> {
+            .map(|&file_path| -> Result<Vec<MisalignmentDetection>> {
                 Self::analyze_single_file_static(
                     file_path,
                     &self.playbook_manager,
@@ -1740,7 +1740,7 @@ impl BullshitAnalyzer {
             .collect();
 
         // Flatten the results
-        let detections: Vec<BullshitDetection> = all_detections?.into_iter().flatten().collect();
+        let detections: Vec<MisalignmentDetection> = all_detections?.into_iter().flatten().collect();
 
         Ok(detections)
     }
@@ -1750,7 +1750,7 @@ impl BullshitAnalyzer {
         &mut self,
         analysis_result: &AnalysisResult,
         original_path: &Path,
-    ) -> Result<Vec<BullshitDetection>> {
+    ) -> Result<Vec<MisalignmentDetection>> {
         let mut all_detections = Vec::new();
 
         // For single file analysis, use the original path
@@ -1810,7 +1810,7 @@ impl BullshitAnalyzer {
     fn analyze_analysis_result(
         &mut self,
         analysis_result: &AnalysisResult,
-    ) -> Result<Vec<BullshitDetection>> {
+    ) -> Result<Vec<MisalignmentDetection>> {
         let mut all_detections = Vec::new();
 
         // Process each file in the analysis result
@@ -1864,7 +1864,7 @@ impl BullshitAnalyzer {
         file_info: &FileInfo,
         file_content: &str,
         file_path: &Path,
-    ) -> Result<Vec<BullshitDetection>> {
+    ) -> Result<Vec<MisalignmentDetection>> {
         // Call the original method but replace file paths in results
         let mut detections = self.apply_rule_to_file(rule, file_info, file_content)?;
 
@@ -1882,7 +1882,7 @@ impl BullshitAnalyzer {
         rule: &DetectionRule,
         file_info: &FileInfo,
         file_content: &str,
-    ) -> Result<Vec<BullshitDetection>> {
+    ) -> Result<Vec<MisalignmentDetection>> {
         let mut detections = Vec::new();
 
         match &rule.pattern_type {
@@ -1939,7 +1939,7 @@ impl BullshitAnalyzer {
         rule: &DetectionRule,
         file_info: &FileInfo,
         file_content: &str,
-    ) -> Result<Vec<BullshitDetection>> {
+    ) -> Result<Vec<MisalignmentDetection>> {
         let mut detections = Vec::new();
 
         for (line_num, line) in file_content.lines().enumerate() {
@@ -1961,7 +1961,7 @@ impl BullshitAnalyzer {
                     final_test_context.adjusted_severity = adjusted_severity;
                     final_test_context.should_suppress = should_suppress;
 
-                    detections.push(BullshitDetection {
+                    detections.push(MisalignmentDetection {
                         rule_id: rule.id.clone(),
                         rule_name: rule.name.clone(),
                         description: rule.description.clone(),
@@ -1990,7 +1990,7 @@ impl BullshitAnalyzer {
         rule: &DetectionRule,
         file_info: &FileInfo,
         file_content: &str,
-    ) -> Result<Vec<BullshitDetection>> {
+    ) -> Result<Vec<MisalignmentDetection>> {
         let mut detections = Vec::new();
         let lines: Vec<&str> = file_content.lines().collect();
 
@@ -2024,7 +2024,7 @@ impl BullshitAnalyzer {
                                 final_test_context.adjusted_severity = adjusted_severity;
                                 final_test_context.should_suppress = should_suppress;
 
-                                detections.push(BullshitDetection {
+                                detections.push(MisalignmentDetection {
                                     rule_id: rule.id.clone(),
                                     rule_name: rule.name.clone(),
                                     description: rule.description.clone(),
@@ -2056,7 +2056,7 @@ impl BullshitAnalyzer {
         rule: &DetectionRule,
         file_info: &FileInfo,
         file_content: &str,
-    ) -> Result<Vec<BullshitDetection>> {
+    ) -> Result<Vec<MisalignmentDetection>> {
         let mut detections = Vec::new();
         let lines: Vec<&str> = file_content.lines().collect();
 
@@ -2090,7 +2090,7 @@ impl BullshitAnalyzer {
                                 final_test_context.adjusted_severity = adjusted_severity;
                                 final_test_context.should_suppress = should_suppress;
 
-                                detections.push(BullshitDetection {
+                                detections.push(MisalignmentDetection {
                                     rule_id: rule.id.clone(),
                                     rule_name: rule.name.clone(),
                                     description: rule.description.clone(),
@@ -2122,7 +2122,7 @@ impl BullshitAnalyzer {
         rule: &DetectionRule,
         file_info: &FileInfo,
         file_content: &str,
-    ) -> Result<Vec<BullshitDetection>> {
+    ) -> Result<Vec<MisalignmentDetection>> {
         let mut detections = Vec::new();
 
         // Simple comment detection - could be enhanced with TreeSitter parsing
@@ -2156,7 +2156,7 @@ impl BullshitAnalyzer {
                         final_test_context.adjusted_severity = adjusted_severity;
                         final_test_context.should_suppress = should_suppress;
 
-                        detections.push(BullshitDetection {
+                        detections.push(MisalignmentDetection {
                             rule_id: rule.id.clone(),
                             rule_name: rule.name.clone(),
                             description: rule.description.clone(),
@@ -2186,7 +2186,7 @@ impl BullshitAnalyzer {
         rule: &DetectionRule,
         file_info: &FileInfo,
         file_content: &str,
-    ) -> Result<Vec<BullshitDetection>> {
+    ) -> Result<Vec<MisalignmentDetection>> {
         let mut detections = Vec::new();
         let lines: Vec<&str> = file_content.lines().collect();
 
@@ -2218,7 +2218,7 @@ impl BullshitAnalyzer {
                             final_test_context.adjusted_severity = adjusted_severity;
                             final_test_context.should_suppress = should_suppress;
 
-                            detections.push(BullshitDetection {
+                            detections.push(MisalignmentDetection {
                                 rule_id: rule.id.clone(),
                                 rule_name: rule.name.clone(),
                                 description: rule.description.clone(),
@@ -2253,7 +2253,7 @@ impl BullshitAnalyzer {
         file_path: &Path,
         playbook_manager: &PlaybookManager,
         test_classifier: &TestFileClassifier,
-    ) -> Result<Vec<BullshitDetection>> {
+    ) -> Result<Vec<MisalignmentDetection>> {
         // Read file content
         let file_content = std::fs::read_to_string(file_path)
             .map_err(|e| SniffError::file_system(file_path, e))?;
@@ -2304,7 +2304,7 @@ impl BullshitAnalyzer {
         file_content: &str,
         file_path: &Path,
         test_classifier: &TestFileClassifier,
-    ) -> Result<Vec<BullshitDetection>> {
+    ) -> Result<Vec<MisalignmentDetection>> {
         let mut detections = Vec::new();
 
         // Only handle regex patterns for now in parallel context
@@ -2334,7 +2334,7 @@ impl BullshitAnalyzer {
                             final_test_context.adjusted_severity = adjusted_severity;
                             final_test_context.should_suppress = should_suppress;
 
-                            detections.push(BullshitDetection {
+                            detections.push(MisalignmentDetection {
                                 rule_id: rule.id.clone(),
                                 rule_name: rule.name.clone(),
                                 description: rule.description.clone(),
@@ -2372,7 +2372,7 @@ impl BullshitAnalyzer {
                             final_test_context.adjusted_severity = adjusted_severity;
                             final_test_context.should_suppress = should_suppress;
 
-                            detections.push(BullshitDetection {
+                            detections.push(MisalignmentDetection {
                                 rule_id: rule.id.clone(),
                                 rule_name: rule.name.clone(),
                                 description: rule.description.clone(),
@@ -2417,9 +2417,9 @@ impl BullshitAnalyzer {
     }
 }
 
-impl Default for BullshitAnalyzer {
+impl Default for MisalignmentAnalyzer {
     fn default() -> Self {
-        Self::new().expect("Failed to create default BullshitAnalyzer")
+        Self::new().expect("Failed to create default MisalignmentAnalyzer")
     }
 }
 
@@ -2431,7 +2431,7 @@ mod tests {
 
     #[test]
     fn test_language_detection() {
-        let analyzer = BullshitAnalyzer::new().unwrap();
+        let analyzer = MisalignmentAnalyzer::new().unwrap();
 
         // Test Rust file
         let rust_path = std::path::Path::new("test.rs");
@@ -2446,7 +2446,7 @@ mod tests {
 
     #[test]
     fn test_bullshit_detection() {
-        let mut analyzer = BullshitAnalyzer::new().unwrap();
+        let mut analyzer = MisalignmentAnalyzer::new().unwrap();
 
         // Create a temporary Rust file with bullshit patterns
         let mut temp_file = NamedTempFile::new().unwrap();

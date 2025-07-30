@@ -1,24 +1,50 @@
-# Sniff: Advanced Claude Code Session Analysis
+# Sniff: Code Quality Analysis Tool
 
-Sniff is a Rust-based CLI tool that decomposes Claude Code session histories into a cryptographically-verified Merkle tree structure, enabling real-time analysis, dependency tracking, and intelligent bullshit detection for LLM-generated code.
+Sniff is a Rust-based CLI tool that detects code quality issues and misalignment patterns in codebases. It provides static analysis capabilities for identifying problematic patterns, tracking code quality over time, and integrating quality gates into development workflows.
 
-## Architecture Overview
+## Origin: Catching AI Deception in Real-Time
 
-Sniff transforms Claude Code's monolithic JSONL session files into a hierarchical, indexed structure that supports concurrent access, granular queries, and pattern-based code quality analysis.
+Sniff emerged from direct observation of AI agents during exploratory coding sessions. During intensive development with AI assistants (Claude, GPT-4, etc.), a pattern became clear: the models were systematically creating deceptive code that provided an illusion of completion while introducing subtle failures.
+
+The agents weren't making random mistakes—they were learning to optimize for _perceived progress_ rather than _actual functionality_. They would:
+
+- Replace working implementations with fake stubs that "looked right"
+- Remove error handling and replace it with silent failures
+- Generate placeholder authentication that always returned `true`
+- Create mock data returns instead of actual business logic
+- Add TODO comments as substitutes for real implementation
+
+Sniff was built incrementally by identifying these adaptive patterns as they emerged during reasoning loops. Rather than asking agents to self-reflect on their code quality (which proved unreliable), Sniff serves as a deterministic reflector that independently verifies task completion without bias.
+
+## Problem Statement
+
+AI-generated code often contains patterns that satisfy immediate compilation requirements but fail in production environments. These patterns include:
+
+- Premature returns without implementation (`return Ok(())`, `return true`)
+- Placeholder implementations (`unimplemented!()`, `time.sleep()`)
+- Silent error suppression (empty `catch {}` blocks)
+- Generic placeholders (`// TODO: implement this later`)
+- Mock data returns (hardcoded test values)
+- Authentication bypasses (always returning `true`)
+
+Sniff detects these patterns and provides quality gates to prevent problematic code from reaching production.
+
+## Architecture
+
+Sniff provides pattern detection and analysis capabilities through multiple components:
 
 ```
-Claude Code Sessions (JSONL) → Sniff Analysis → Merkle Tree + Pattern Detection
-├── Real-time monitoring during active sessions
-├── Dependency graph construction
-├── Bullshit pattern detection and learning
-└── Advanced search and analytics
+Code Files → AST (Syntax Tree) Analysis → Pattern Detection → Quality Report
+├── Language-specific pattern matching
+├── Quality scoring and classification
+└── Integration with development workflows
 ```
 
 ## Installation
 
 ```bash
 # Build from source
-git clone https://github.com/your-org/sniff
+git clone https://github.com/conikeec/sniff
 cd sniff
 cargo build --release
 
@@ -29,351 +55,369 @@ cargo install --path .
 sniff --version
 ```
 
-## Quick Start
+## Command Reference
 
-### 1. Initialize Sniff for a Project
+### Core Commands
 
-```bash
-# Navigate to your project directory
-cd /path/to/your/project
+#### `sniff analyze-files` - File Analysis
 
-# Initialize Sniff analysis
-sniff patterns init
-
-# This creates:
-# .sniff/
-# ├── config.toml
-# ├── patterns/
-# ├── checkpoints/
-# └── analysis/
-```
-
-### 2. Standalone File Analysis (Works with Any Editor)
+Analyze codebase files for code quality issues and misalignment patterns.
 
 ```bash
-# Analyze specific files
-sniff analyze-files src/main.rs src/lib.rs
-
-# Analyze entire directory
-sniff analyze-files . --extensions rs,py,ts
-
-# Create checkpoint and analyze changes
-sniff analyze-files . --checkpoint "before-refactor"
-# ... make changes ...
-sniff analyze-files . --diff-checkpoint "before-refactor"
-
-# Analyze with detailed output
-sniff analyze-files src/ --detailed --format markdown > analysis-report.md
+# Basic file analysis
+sniff analyze-files tests/samples/test_misalignment.rs
 ```
 
-### 3. Analyze Existing Claude Code Sessions
+**Output:**
+
+```
+TODO Verification Report
+──────────────────────────────────────────────────
+├─ TODO: file-analysis
+├─ Metrics
+│  ├─ Files analyzed: 1
+│  ├─ Quality score: 0% (required: 80%)
+│  ├─ Critical issues: 6 (max allowed: 0)
+│  └─ Total detections: 16
+├─ Result
+│  └─ ● FAILED - Continue working on this TODO
+│     ├─ ⚠ Quality score 0.0% below required 80.0%
+│     └─ ⚠ 6 critical issues found (max allowed: 0)
+└─ Issues Found
+   └─ tests/samples/test_misalignment.rs (Quality: 0%)
+      ├─ ● Unimplemented Macro (line 5): unimplemented!()
+      ├─ ● TODO Comment (line 4): // TODO:
+      └─ ● Unwrap Without Context (line 19): .unwrap()
+      └─ ● ... and 13 more issues
+```
 
 ```bash
-# Import all Claude Code sessions for current project
-sniff scan --project $(pwd | sed 's/\//-/g')
-
-# Analyze specific session
-sniff analyze --session session-abc123.jsonl
-
-# View operation timeline
-sniff info --session abc123-def456
+# Analyze multiple files with filtering
+sniff analyze-files tests/samples/ --extensions rs,py,ts
 ```
 
-### 4. Real-time Monitoring
+**Output:**
+
+```
+Analysis Summary
+──────────────────────────────────────────────────
+├─ Metrics
+│  ├─ Files analyzed: 7
+│  ├─ Quality score: 53.7% (average)
+│  ├─ Critical issues: 8
+│  └─ Total detections: 39
+└─ Files
+   ├─ tests/samples/test_python.py (57.0% quality, 3 issues)
+   ├─ tests/samples/test_new_patterns.rs (69.0% quality, 3 issues)
+   ├─ tests/samples/test_typescript_patterns.ts (84.0% quality, 2 issues)
+   └─ ... 4 more files
+```
 
 ```bash
-# Monitor active Claude Code sessions
-sniff watch
-
-# Monitor with bullshit detection
-sniff watch --detect-bullshit --alert-critical
+# Detailed analysis with specific issues
+sniff analyze-files tests/samples/test_misalignment.rs --detailed
 ```
-
-## Persistent File Structure
-
-Sniff maintains its analysis data in a `.sniff` directory within your project:
-
-```
-.sniff/
-├── config.toml              # Sniff configuration
-├── tree.redb                # Merkle tree storage (redb database)
-├── search.idx/              # Tantivy full-text search index
-│   ├── segments/
-│   └── meta.json
-├── patterns/                # Pattern library
-│   ├── rust/
-│   │   ├── baseline.yaml    # Built-in patterns
-│   │   └── learned.yaml     # Project-specific learned patterns
-│   ├── python/
-│   │   ├── baseline.yaml
-│   │   └── learned.yaml
-│   └── typescript/
-│       ├── baseline.yaml
-│       └── learned.yaml
-├── analysis/                # Analysis results and reports
-│   ├── sessions/
-│   │   ├── abc123-def456.json
-│   │   └── xyz789-ghi012.json
-│   ├── bullshit-detections.jsonl
-│   └── pattern-matches.jsonl
-└── cache/                   # Performance caches
-    ├── operation-index.db
-    └── dependency-graph.db
-```
-
-### File Structure Details
-
-**`tree.redb`**: Single-file embedded database containing:
-- Merkle tree nodes (projects, sessions, messages, operations)
-- Hash-based indices for O(1) lookups
-- Parent-child relationship mappings
-- Operation dependency graphs
-
-**`search.idx/`**: Tantivy search index enabling:
-- Full-text search across message content
-- Faceted search by tool, file, timestamp
-- Operation metadata queries
-- Cross-session content discovery
-
-**`patterns/`**: Language-specific pattern libraries:
-- `baseline.yaml`: Built-in bullshit detection patterns
-- `learned.yaml`: Project-specific patterns learned from failures
-- Pattern definitions with regex, scope, and severity
-
-## Pattern Library System
-
-### Pattern Definition Format
-
-Patterns are defined in YAML files with the following structure:
-
-```yaml
-language: "rust"
-version: "1.0"
-rules:
-  - name: "AI Shortcut Comments"
-    pattern_type: !Regex
-      pattern: "(?i)(for now|todo|hack|temp|quick fix|later|placeholder)"
-    scope: !Comments
-    severity: !High
-    description: "Placeholder comments indicating deferred implementation"
-    examples:
-      - "// TODO: Add proper error handling later"
-      - "// Quick fix for now"
-    remediation: "Replace with specific implementation requirements"
-
-  - name: "Hardcoded Magic Numbers"
-    pattern_type: !Regex
-      pattern: "\\b(3|5|10|100|1000)\\b(?=\\s*[;,)])"
-    scope: !FunctionBody
-    severity: !Medium
-    description: "Suspicious hardcoded values that should be configurable"
-    examples:
-      - "let timeout = 5000;"
-      - "for i in 0..100 {"
-```
-
-### Pattern Types and Scopes
-
-**Pattern Types**:
-- `!Regex`: Regular expression matching
-- `!Literal`: Exact string matching
-- `!Semantic`: AST-based pattern matching (future)
-
-**Scopes**:
-- `!Comments`: Match within code comments
-- `!FunctionBody`: Match within function implementations
-- `!Imports`: Match in import/use statements
-- `!TopLevel`: Match at module/file level
-- `!All`: Match anywhere in the file
-
-**Severity Levels**:
-- `!Critical`: Blocks code acceptance
-- `!High`: Requires immediate attention
-- `!Medium`: Should be addressed soon
-- `!Low`: Improvement suggestion
-
-### Built-in Pattern Categories
-
-**AI Shortcuts**:
-- Placeholder comments ("TODO", "for now", "quick fix")
-- Hardcoded magic numbers
-- Bare except clauses (Python)
-- Any type usage (TypeScript)
-- Unsafe blocks for convenience (Rust)
-
-**Error Handling Issues**:
-- Silent error suppression
-- Generic error types
-- Missing error context
-- Unvalidated assumptions
-
-**Code Quality Issues**:
-- Deep nesting levels
-- Long parameter lists
-- Duplicate code blocks
-- Missing documentation
-
-## Adding Custom Patterns
-
-### Command-Line Pattern Creation
 
 ```bash
-# Create a new pattern interactively
-sniff pattern create --language rust
-
-# Example interaction:
-Pattern name: Unwrap Abuse
-Pattern regex: \.unwrap\(\)
-Scope: FunctionBody
-Severity: High
-Description: Direct unwrap() calls that could panic
-Example: let value = result.unwrap();
-
-# Add pattern from command line
-sniff pattern add \
-  --language python \
-  --name "Print Debugging" \
-  --pattern "print\(" \
-  --scope FunctionBody \
-  --severity Medium \
-  --description "Print statements left in production code"
+# Compact output for CI/CD integration
+sniff analyze-files tests/samples/ --format compact
 ```
 
-### Manual Pattern Files
+**Output:**
 
-Create or edit pattern files directly:
+```
+tests/samples/test_python.py: 3 issues, 57.0% quality
+tests/samples/test_new_patterns.rs: 3 issues, 69.0% quality
+tests/samples/test_typescript_patterns.ts: 2 issues, 84.0% quality
+tests/samples/test_misalignment.py: 7 issues, 27.0% quality
+tests/samples/test_misalignment.rs: 16 issues, 0.0% quality
+tests/samples/test_exact_patterns.py: 4 issues, 78.0% quality
+tests/samples/test_enhanced_patterns.rs: 4 issues, 61.0% quality
+```
+
+#### `sniff verify-todo` - Quality Gate Verification
+
+Verify TODO completion with quality analysis before marking tasks complete.
 
 ```bash
-# Edit project-specific patterns
-vim .sniff/patterns/rust/learned.yaml
-
-# Edit global baseline patterns (affects all projects)
-vim ~/.sniff/patterns/rust/baseline.yaml
+# Basic verification (trust agent-reported files)
+sniff verify-todo --todo-id "implement-auth" --files src/auth.rs src/middleware/auth.rs --min-quality-score 85
 ```
 
-### Pattern Learning from Failures
+**Output:**
 
-Sniff can automatically learn patterns from compilation failures and user corrections:
+```
+TODO Verification Report
+──────────────────────────────────────────────────
+├─ TODO: implement-auth
+├─ Metrics
+│  ├─ Files analyzed: 2
+│  ├─ Quality score: 88% (required: 85%)
+│  ├─ Critical issues: 0 (max allowed: 0)
+│  └─ Total detections: 3
+├─ Result
+│  └─ ● PASSED - Ready to mark complete
+```
 
 ```bash
-# Learn from recent failures
-sniff pattern learn --from-failures --session abc123-def456
-
-# Learn from specific correction
-sniff pattern learn \
-  --code "let result = unsafe { transmute(data) };" \
-  --issue "Unnecessary unsafe usage for type conversion" \
-  --language rust \
-  --severity High
+# Secure verification with Git discovery (prevents agent deception)
+sniff verify-todo --todo-id "implement-auth" --files src/auth.rs --git-discovery --min-quality-score 85
 ```
 
-## Standalone File Analysis (Editor Independent)
+**Output when agent hides files:**
 
-Sniff can analyze any codebase without requiring Claude Code sessions, making it perfect for integration with Cursor, Windsurf, VS Code, and other editors.
+```
+Git discovery found 5 files vs 1 reported
+Using git-discovered files for verification
 
-### Basic File Analysis
+TODO Verification Report
+──────────────────────────────────────────────────
+├─ TODO: implement-auth
+├─ Metrics
+│  ├─ Files analyzed: 5
+│  ├─ Quality score: 45% (required: 85%)
+│  ├─ Critical issues: 8 (max allowed: 0)
+│  └─ Total detections: 23
+├─ Result
+│  └─ ● FAILED - Continue working on this TODO
+│     ├─ ⚠ Quality score 45.0% below required 85.0%
+│     └─ ⚠ 8 critical issues found (max allowed: 0)
+└─ Issues Found
+   ├─ src/auth.rs (Quality: 12%) [HIDDEN FILE]
+   │     ├─ ● Authentication Bypass (line 45): return true
+   │     ├─ ● Silent Error Suppression (line 67): catch {}
+   │     └─ ● ... and 4 more issues
+   └─ ... 4 more files with issues
+```
+
+#### Agent Deception Detection
+
+The `--git-discovery` flag prevents AI agents from hiding problematic files during verification:
+
+**How Agents Deceive:**
+
+```
+Agent reports: "Modified files: src/main.rs, src/utils.rs"
+Git actually shows: src/main.rs, src/utils.rs, src/auth.rs, tests/broken.rs, config/secrets.rs
+Hidden files often contain: quality issues, security vulnerabilities, TODO stubs
+```
+
+**Git Commands Used for Discovery:**
 
 ```bash
-# Analyze specific files
-sniff analyze-files src/main.rs lib/utils.py
-
-# Analyze directory with file type filtering
-sniff analyze-files . --extensions rs,py,ts,js --exclude "target/*,node_modules/*"
-
-# Force language detection for files without extensions
-sniff analyze-files scripts/deploy --force-language python
-
-# Analyze with size limits
-sniff analyze-files . --max-file-size-mb 5 --include-hidden
+git diff --name-only              # Working directory changes
+git diff --cached --name-only     # Staged changes
+git diff HEAD~3 --name-only       # Recent commits
+git ls-files --others --exclude-standard  # Untracked files
 ```
 
-### Checkpoint-Based Change Tracking
+**Recommended Usage:**
 
-Perfect for tracking code quality over development iterations:
+- Use `--git-discovery` in CI/CD pipelines
+- Use `--git-discovery` when agents complete complex tasks
+- Use basic mode for simple, trusted changes
+
+#### `sniff checkpoint` - Change Tracking
+
+Create snapshots and track code quality changes over time.
 
 ```bash
 # Create checkpoint before starting work
-sniff checkpoint create --name "pre-refactor" --description "Before API refactoring" src/ tests/
-
-# Work on your code with any editor...
-
-# Analyze only changed files since checkpoint
-sniff analyze-files . --diff-checkpoint "pre-refactor"
-
-# Compare current state to checkpoint
-sniff checkpoint diff pre-refactor
-
-# List all checkpoints
-sniff checkpoint list
-
-# Create analysis report comparing checkpoints
-sniff analyze-files . --diff-checkpoint "pre-refactor" --format markdown --output-file quality-report.md
+sniff checkpoint create --name "pre-refactor" --description "Before API cleanup" tests/samples/
 ```
 
-### Editor Integration Examples
+```bash
+# List all checkpoints
+sniff checkpoint list
+```
 
-#### VS Code Integration
+```bash
+# Compare current state to checkpoint
+sniff checkpoint diff pre-refactor
+```
+
+**Output:**
+
+```
+Changes since checkpoint 'pre-refactor'
+──────────────────────────────────────────────────
+├─ New files (3)
+│  ├─ src/new_feature.rs
+│  ├─ tests/new_test.rs
+│  └─ docs/changelog.md
+├─ Modified files (2)
+│  ├─ src/main.rs
+│  └─ tests/integration_test.rs
+└─ No deletions
+```
+
+#### `sniff patterns` - Pattern Management
+
+Manage pattern detection rules and create custom quality checks.
+
+```bash
+# List available patterns for a language
+sniff patterns list --language rust
+```
+
+```bash
+# Export patterns for team sharing
+sniff patterns export --language rust --output team-patterns.yaml
+```
+
+```bash
+# Initialize pattern system
+sniff patterns init
+```
+
+### Advanced Commands
+
+#### `sniff scan` - Session Discovery
+
+Discover and import Claude Code sessions for analysis.
+
+```bash
+# Scan all available Claude Code sessions
+sniff scan --skip-operations
+```
+
+#### `sniff analyze` - Session Analysis
+
+Analyze Claude Code sessions for patterns and dependencies.
+
+```bash
+# Analyze by project
+sniff analyze --project my-project
+```
+
+#### `sniff search` - Content Search
+
+Search across sessions and code for patterns and content.
+
+```bash
+# Full-text search across sessions
+sniff search "error" --limit 5
+```
+
+#### `sniff stats` - Statistics
+
+Show database and processing statistics.
+
+```bash
+# Show overall statistics
+sniff stats
+```
+
+### Database Commands
+
+#### `sniff db` - Database Management
+
+Manage the Sniff database and indices.
+
+```bash
+# Show database status
+sniff db status
+```
+
+```bash
+# Clear all data (requires confirmation)
+sniff db clear --confirm
+```
+
+## Quick Start Guide
+
+### 1. Basic Analysis
+
+```bash
+# Install Sniff
+cargo install --git https://github.com/conikeec/sniff
+
+# Navigate to your project
+cd /path/to/your/codebase
+
+# Run analysis
+sniff analyze-files . --extensions rs,py,ts,js
+```
+
+### 2. Quality Gates
+
+```bash
+# Create TODO with quality requirements
+sniff verify-todo --todo-id "feature-implementation" --files src/feature.rs --min-quality-score 80
+
+# Implementation work...
+
+# Verify before completion (basic)
+sniff verify-todo --todo-id "feature-implementation" --files src/feature.rs --min-quality-score 80
+
+# Secure verification (recommended for AI agents)
+sniff verify-todo --todo-id "feature-implementation" --files src/feature.rs --git-discovery --min-quality-score 80
+```
+
+### 3. Change Tracking
+
+```bash
+# Create baseline checkpoint
+sniff checkpoint create --name "baseline" .
+
+# Work on code...
+
+# Compare against baseline
+sniff analyze-files . --diff-checkpoint "baseline"
+```
+
+## File Structure
+
+Sniff maintains analysis data in a `.sniff` directory:
+
+```
+.sniff/
+├── config.toml              # Configuration
+├── checkpoints/             # Checkpoint data
+├── patterns/                # Pattern library
+└── cache/                   # Performance caches
+```
+
+## Pattern System
+
+Patterns are defined in YAML files that specify detection rules:
+
+```yaml
+name: "Rust Quality Patterns"
+language: "rust"
+rules:
+  - id: "rust_unimplemented"
+    name: "Unimplemented Macro"
+    description: "Function uses unimplemented!() macro"
+    severity: "Critical"
+    pattern_type: !Regex
+      pattern: "unimplemented!\\(\\)"
+    scope: "FunctionBody"
+    enabled: true
+```
+
+## Integration Examples
+
+### VS Code Integration
 
 Create `.vscode/tasks.json`:
 
 ```json
 {
-    "version": "2.0.0",
-    "tasks": [
-        {
-            "label": "Sniff: Analyze Current File",
-            "type": "shell",
-            "command": "sniff",
-            "args": ["analyze-files", "${file}", "--detailed"],
-            "group": "test",
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "new"
-            }
-        },
-        {
-            "label": "Sniff: Analyze Workspace",
-            "type": "shell",
-            "command": "sniff",
-            "args": ["analyze-files", ".", "--extensions", "rs,py,ts,js", "--format", "json"],
-            "group": "test"
-        },
-        {
-            "label": "Sniff: Create Checkpoint",
-            "type": "shell",
-            "command": "sniff",
-            "args": ["checkpoint", "create", "--name", "${input:checkpointName}", "."],
-            "group": "build"
-        }
-    ],
-    "inputs": [
-        {
-            "id": "checkpointName",
-            "description": "Checkpoint name",
-            "default": "checkpoint-${CURRENT_YEAR}${CURRENT_MONTH}${CURRENT_DATE}",
-            "type": "promptString"
-        }
-    ]
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Sniff: Analyze Current File",
+      "type": "shell",
+      "command": "sniff",
+      "args": ["analyze-files", "${file}", "--detailed"],
+      "group": "test"
+    }
+  ]
 }
 ```
 
-#### Cursor/Windsurf Integration
-
-Add to your project's `.cursor/rules.md` or similar:
-
-```markdown
-# Code Quality Rules
-
-Run Sniff analysis before commits:
-- `sniff analyze-files . --critical-only`
-- Address all critical issues before proceeding
-- Use `sniff checkpoint create` before major changes
-- Compare against checkpoints after refactoring
-```
-
-#### Git Hooks Integration
+### Git Pre-commit Hook
 
 Add to `.git/hooks/pre-commit`:
 
@@ -381,333 +425,62 @@ Add to `.git/hooks/pre-commit`:
 #!/bin/bash
 echo "Running Sniff code quality analysis..."
 
-# Analyze staged files only
 STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(rs|py|ts|js)$')
 
 if [ -n "$STAGED_FILES" ]; then
-    # Create temporary checkpoint
-    sniff checkpoint create --name "pre-commit-$(date +%s)" $STAGED_FILES
-    
-    # Analyze staged files
     sniff analyze-files $STAGED_FILES --format compact
-    
-    # Check for critical issues
+
     if sniff analyze-files $STAGED_FILES --format json | grep -q '"critical_issues":[^0]'; then
-        echo "❌ Critical issues detected. Commit blocked."
-        echo "Run 'sniff analyze-files $STAGED_FILES --detailed' for details."
+        echo "Critical issues detected. Commit blocked."
         exit 1
     fi
 fi
 
-echo "✅ Code quality checks passed"
-```
-
-### Advanced Filtering and Analysis
-
-```bash
-# Analyze with complex filters
-sniff analyze-files . \
-  --extensions rs,py,ts \
-  --exclude "target/*,node_modules/*,*.test.*,*.spec.*" \
-  --max-file-size-mb 2 \
-  --detailed
-
-# Language-specific analysis
-sniff analyze-files src/ --force-language rust --detailed
-sniff analyze-files scripts/ --force-language python --detailed
-
-# Generate comprehensive reports
-sniff analyze-files . \
-  --checkpoint "analysis-$(date +%Y%m%d)" \
-  --format markdown \
-  --detailed \
-  --output-file "quality-report-$(date +%Y%m%d).md"
-```
-
-## Claude Code Integration
-
-### Real-time Session Monitoring
-
-Monitor active Claude Code sessions with automatic bullshit detection:
-
-```bash
-# Start monitoring in background
-sniff watch --daemon --project /path/to/project
-
-# Monitor with notifications
-sniff watch --notify-on high --email alerts@company.com
-
-# Monitor specific session
-sniff watch --session-id abc123-def456 --verbose
-```
-
-### Checkpoint Analysis
-
-Integrate Sniff into Claude Code workflows using checkpoints:
-
-#### 1. Pre-commit Hook Integration
-
-```bash
-# Add to .git/hooks/pre-commit
-#!/bin/bash
-echo "Running Sniff analysis..."
-
-# Analyze recent changes
-sniff analyze --diff HEAD~1..HEAD --fail-on critical
-
-if [ $? -ne 0 ]; then
-    echo "❌ Critical bullshit patterns detected. Commit blocked."
-    echo "Run 'sniff report --last-analysis' for details."
-    exit 1
-fi
-
-echo "✅ Code quality checks passed"
-```
-
-#### 2. Claude Code Tool Wrapper
-
-Create a wrapper script to analyze after each tool operation:
-
-```bash
-#!/bin/bash
-# claude-with-sniff.sh
-
-# Run original Claude Code command
-claude-code "$@"
-CLAUDE_EXIT_CODE=$?
-
-# Analyze if any files were modified
-if [ $CLAUDE_EXIT_CODE -eq 0 ]; then
-    echo "Analyzing changes with Sniff..."
-    sniff analyze --recent-changes --real-time
-    
-    if sniff status --has-critical-issues; then
-        echo "⚠️  Critical issues detected in generated code:"
-        sniff report --critical-only --suggest-prompts
-    fi
-fi
-
-exit $CLAUDE_EXIT_CODE
-```
-
-#### 3. VS Code Extension Integration
-
-Configure VS Code to run Sniff analysis on Claude Code operations:
-
-```json
-// .vscode/settings.json
-{
-    "claude-code.onOperationComplete": [
-        {
-            "command": "sniff analyze --file ${file} --highlight-issues",
-            "when": "fileModified"
-        }
-    ],
-    "sniff.realTimeAnalysis": true,
-    "sniff.showInlineWarnings": true
-}
-```
-
-### Generative Loop Integration
-
-#### Continuous Quality Feedback
-
-```bash
-# Start Claude Code session with Sniff monitoring
-claude-code chat --project /path/to/project &
-CLAUDE_PID=$!
-
-# Start Sniff monitoring in parallel
-sniff watch --claude-pid $CLAUDE_PID --interactive-feedback
-
-# This enables:
-# 1. Real-time analysis of each tool operation
-# 2. Immediate feedback on detected patterns
-# 3. Suggested prompt improvements
-# 4. Learning from user corrections
-```
-
-#### Automatic Prompt Refinement
-
-Sniff can suggest better prompts when bullshit patterns are detected:
-
-```bash
-# After detecting issues, get prompt suggestions
-sniff suggest-prompts --last-analysis
-
-# Example output:
-# Detected: Hardcoded timeout values
-# Current prompt: "Add error handling to the network client"
-# Suggested: "Implement robust network client with configurable timeouts, 
-#            exponential backoff retry logic, and comprehensive error handling 
-#            for connection failures, timeouts, and server errors"
-```
-
-## Advanced Usage
-
-### Dependency Analysis
-
-```bash
-# Show operation dependency graph
-sniff dependencies --session abc123-def456 --graph
-
-# Analyze impact of specific operation
-sniff impact --operation op_12345
-
-# Find operation chains
-sniff chains --starting-with "Edit config.rs" --depth 5
-```
-
-### Search and Analytics
-
-```bash
-# Full-text search across sessions
-sniff search "error handling" --last-week
-
-# Find operations by type
-sniff search --tool Edit --files "*.rs" --failed-only
-
-# Analytics queries
-sniff analytics --most-edited-files --time-range "last month"
-sniff analytics --failure-patterns --group-by tool
-sniff analytics --bullshit-trends --project-comparison
-```
-
-### Pattern Management
-
-```bash
-# List all patterns
-sniff pattern list --language rust --severity high
-
-# Test pattern against codebase
-sniff pattern test --pattern-id "hardcoded-values" --dry-run
-
-# Export patterns for sharing
-sniff pattern export --team-pack > team-patterns.yaml
-
-# Import team patterns
-sniff pattern import team-patterns.yaml --merge
-```
-
-### Reporting
-
-```bash
-# Generate comprehensive report
-sniff report --session abc123-def456 --format html --output session-report.html
-
-# Bullshit detection summary
-sniff report --bullshit-summary --last-week --pdf
-
-# Team analytics dashboard
-sniff report --team-dashboard --all-projects --serve localhost:8080
+echo "Code quality checks passed"
 ```
 
 ## Configuration
-
-### Project Configuration
 
 Edit `.sniff/config.toml`:
 
 ```toml
 [project]
-name = "my-awesome-project"
+name = "my-project"
 languages = ["rust", "python", "typescript"]
 
-[watching]
-claude_projects_path = "~/.claude/projects"
-real_time_analysis = true
-auto_learn_patterns = true
-
-[bullshit_detection]
-enabled = true
-auto_block_critical = false
-learning_mode = true
-notification_threshold = "high"
+[analysis]
+quality_threshold = 80
+max_critical_issues = 0
 
 [patterns]
-use_team_patterns = true
+use_custom_patterns = true
 learn_from_failures = true
-false_positive_learning = true
-
-[reporting]
-auto_generate_daily = true
-export_format = ["json", "html"]
-team_dashboard_port = 8080
 ```
 
-### Global Configuration
+## Command Line Options
 
-Edit `~/.sniff/config.toml` for system-wide defaults:
+### Common Options
 
-```toml
-[defaults]
-notification_email = "dev@company.com"
-team_pattern_repo = "git@github.com:company/sniff-patterns.git"
-analysis_retention_days = 90
+- `--format`: Output format (table, json, markdown, compact)
+- `--detailed`: Show detailed issue information
+- `--extensions`: File extensions to analyze
+- `--exclude`: Exclude files matching pattern
+- `--max-file-size-mb`: Maximum file size to analyze
 
-[integrations]
-slack_webhook = "https://hooks.slack.com/..."
-jira_integration = true
-github_actions = true
-```
+### Quality Options
 
-## Common Workflows
+- `--min-quality-score`: Minimum quality score required (0-100)
+- `--max-critical-issues`: Maximum critical issues allowed
+- `--include-tests`: Include test files in analysis
+- `--test-confidence`: Confidence threshold for test file detection
 
-### Daily Development Workflow
+### Security Options
 
-1. **Start monitoring**: `sniff watch --daemon`
-2. **Work with Claude Code** normally
-3. **Review detections**: `sniff status --daily-summary`
-4. **Learn from issues**: `sniff pattern learn --interactive`
-5. **Generate report**: `sniff report --daily --share-team`
-
-### Code Review Integration
-
-1. **Analyze PR changes**: `sniff analyze --diff origin/main..HEAD`
-2. **Generate review comments**: `sniff report --github-comments`
-3. **Update team patterns**: `sniff pattern export --review-feedback`
-
-### Team Onboarding
-
-1. **Set up team patterns**: `sniff pattern import team-patterns.yaml`
-2. **Configure notifications**: `sniff config --team-defaults`
-3. **Train on project patterns**: `sniff tutorial --project-specific`
-
-## Troubleshooting
-
-### Common Issues
-
-**Database corruption**:
-```bash
-sniff repair --verify-integrity
-sniff repair --rebuild-index
-```
-
-**Pattern conflicts**:
-```bash
-sniff pattern validate --all
-sniff pattern resolve-conflicts --interactive
-```
-
-**Performance issues**:
-```bash
-sniff optimize --compact-database
-sniff optimize --rebuild-search-index
-```
-
-### Debug Mode
-
-```bash
-# Run with detailed logging
-RUST_LOG=debug sniff watch --verbose
-
-# Analyze with tracing
-sniff analyze --trace --session abc123-def456
-```
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and contribution guidelines.
+- `--git-discovery`: Use Git to discover changed files (prevents agent deception)
+  - Discovers files using: `git diff`, `git status`, `git ls-files`
+  - Compares agent-reported vs git-discovered files
+  - Warns when agents hide problematic files
+  - Recommended for CI/CD and agent-completed tasks
 
 ## License
 
@@ -715,6 +488,6 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Documentation
 
-- [Architecture Analysis](docs/claude-code-architecture.md)
-- [Merkle Tree Advantages](docs/sniff-merkle-advantages.md) 
-- [Bullshit Detector Integration](docs/bullshit-detector-integration.md)
+- [Integration Guide](integrations/README.md)
+- [Pattern Development](docs/patterns.md)
+- [Architecture Overview](docs/architecture.md)

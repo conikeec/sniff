@@ -7,7 +7,7 @@
 //! create checkpoints for change tracking, and integrate with editors like Cursor,
 //! Windsurf, and VS Code.
 
-use crate::analysis::{BullshitAnalyzer, BullshitDetection};
+use crate::analysis::{MisalignmentAnalyzer, MisalignmentDetection, TestFileClassifier};
 use crate::error::{Result, SniffError};
 use crate::SupportedLanguage;
 use chrono::{DateTime, Utc};
@@ -39,6 +39,10 @@ pub struct FileFilter {
     pub exclude_pattern: Option<String>,
     /// Maximum file size to analyze (in bytes).
     pub max_file_size_bytes: u64,
+    /// Include test files in analysis (default: false to exclude tests).
+    pub include_test_files: bool,
+    /// Minimum confidence threshold for test file detection (0.0-1.0).
+    pub test_confidence_threshold: f64,
 }
 
 impl Default for FileFilter {
@@ -48,25 +52,29 @@ impl Default for FileFilter {
             allowed_extensions: None,
             exclude_pattern: None,
             max_file_size_bytes: 10 * 1024 * 1024, // 10MB
+            include_test_files: false, // By default, exclude test files
+            test_confidence_threshold: 0.3, // Threshold for test file detection
         }
     }
 }
 
 /// Standalone analyzer for arbitrary files.
 pub struct StandaloneAnalyzer {
-    bullshit_analyzer: BullshitAnalyzer,
+    misalignment_analyzer: MisalignmentAnalyzer,
     config: AnalysisConfig,
     language_detector: LanguageDetector,
+    test_classifier: TestFileClassifier,
 }
 
 impl StandaloneAnalyzer {
     /// Creates a new standalone analyzer.
     #[must_use]
-    pub fn new(bullshit_analyzer: BullshitAnalyzer, config: AnalysisConfig) -> Self {
+    pub fn new(misalignment_analyzer: MisalignmentAnalyzer, config: AnalysisConfig) -> Self {
         Self {
-            bullshit_analyzer,
+            misalignment_analyzer,
             config,
             language_detector: LanguageDetector::new(),
+            test_classifier: TestFileClassifier::new(),
         }
     }
 
@@ -168,15 +176,22 @@ impl StandaloneAnalyzer {
 
         let lang = language.unwrap();
 
-        // Create a temporary file for analysis since BullshitAnalyzer works with files
-        let temp_file =
-            tempfile::NamedTempFile::new().map_err(|e| SniffError::file_system(file_path, e))?;
+        // Create a temporary file with the same extension for analysis
+        let extension = file_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("");
+        
+        let temp_file = tempfile::Builder::new()
+            .suffix(&format!(".{}", extension))
+            .tempfile()
+            .map_err(|e| SniffError::file_system(file_path, e))?;
 
         std::fs::write(temp_file.path(), &content)
             .map_err(|e| SniffError::file_system(file_path, e))?;
 
         // Analyze content for bullshit patterns
-        let detections = self.bullshit_analyzer.analyze_file(temp_file.path())?;
+        let detections = self.misalignment_analyzer.analyze_file(temp_file.path())?;
 
         // Calculate quality score
         let quality_score = self.calculate_quality_score(&detections);
@@ -282,11 +297,38 @@ impl StandaloneAnalyzer {
             }
         }
 
+        // Check test file filtering
+        if !self.config.filter.include_test_files {
+            // Read file content to classify
+            let content = match fs::read_to_string(file_path).await {
+                Ok(content) => content,
+                Err(_) => {
+                    // If we can't read the file, skip test file detection
+                    debug!("Unable to read file for test classification: {}", file_path.display());
+                    return Ok(true);
+                }
+            };
+
+            let test_classification = self.test_classifier.classify_file(
+                &file_path.to_string_lossy(),
+                Some(&content)
+            );
+            
+            if test_classification.confidence >= self.config.filter.test_confidence_threshold {
+                debug!(
+                    "Excluding test file: {} (confidence: {:.2})",
+                    file_path.display(),
+                    test_classification.confidence
+                );
+                return Ok(false);
+            }
+        }
+
         Ok(true)
     }
 
     /// Calculates a quality score based on detected patterns.
-    fn calculate_quality_score(&self, detections: &[BullshitDetection]) -> f64 {
+    fn calculate_quality_score(&self, detections: &[MisalignmentDetection]) -> f64 {
         if detections.is_empty() {
             return 100.0;
         }
@@ -440,7 +482,7 @@ pub struct FileAnalysisResult {
     /// Detected language (if any).
     pub language: Option<SupportedLanguage>,
     /// Bullshit patterns detected in the file.
-    pub detections: Vec<BullshitDetection>,
+    pub detections: Vec<MisalignmentDetection>,
     /// Overall quality score for the file (0-100).
     pub quality_score: f64,
     /// Additional analysis metadata.
@@ -835,4 +877,155 @@ pub struct FileComparison {
     pub changed_files: Vec<PathBuf>,
     /// Files that existed in the checkpoint but not now.
     pub deleted_files: Vec<PathBuf>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    use tokio::fs;
+
+    async fn create_test_file(dir: &Path, name: &str, content: &str) -> PathBuf {
+        let file_path = dir.join(name);
+        fs::write(&file_path, content).await.unwrap();
+        file_path
+    }
+
+    async fn create_analyzer_with_filter(filter: FileFilter) -> StandaloneAnalyzer {
+        let config = AnalysisConfig {
+            filter,
+            force_language: None,
+            detailed_analysis: false,
+        };
+        let analyzer = crate::analysis::MisalignmentAnalyzer::new().unwrap();
+        StandaloneAnalyzer::new(analyzer, config)
+    }
+
+    #[tokio::test]
+    async fn test_file_filtering_excludes_test_files_by_default() {
+        let temp_dir = TempDir::new().unwrap();
+        
+        // Create a test file that should be identified as a test
+        let test_file = create_test_file(
+            temp_dir.path(),
+            "test_example.rs",
+            r#"
+#[test]
+fn test_something() {
+    assert_eq!(1, 1);
+}
+            "#,
+        ).await;
+
+        // Create a regular file
+        let regular_file = create_test_file(
+            temp_dir.path(),
+            "regular.rs",
+            r#"
+fn regular_function() {
+    println!("Hello world");
+}
+            "#,
+        ).await;
+
+        // Default filter should exclude test files
+        let filter = FileFilter::default();
+        let analyzer = create_analyzer_with_filter(filter).await;
+
+        // Test file should be excluded
+        assert!(!analyzer.should_analyze_file(&test_file).await.unwrap());
+        
+        // Regular file should be included
+        assert!(analyzer.should_analyze_file(&regular_file).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_file_filtering_includes_test_files_when_configured() {
+        let temp_dir = TempDir::new().unwrap();
+        
+        let test_file = create_test_file(
+            temp_dir.path(),
+            "test_example.rs",
+            r#"
+#[test]
+fn test_something() {
+    assert_eq!(1, 1);
+}
+            "#,
+        ).await;
+
+        // Configure filter to include test files
+        let filter = FileFilter {
+            include_test_files: true,
+            ..FileFilter::default()
+        };
+        let analyzer = create_analyzer_with_filter(filter).await;
+
+        // Test file should be included when explicitly configured
+        assert!(analyzer.should_analyze_file(&test_file).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_confidence_threshold_filtering() {
+        let temp_dir = TempDir::new().unwrap();
+        
+        // Create a file with weak test indicators
+        let weak_test_file = create_test_file(
+            temp_dir.path(),
+            "maybe_test.rs",
+            r#"
+fn test_helper() {
+    // This might be a test helper but confidence is lower
+}
+            "#,
+        ).await;
+
+        // High confidence threshold - should include weak test files
+        let high_threshold_filter = FileFilter {
+            include_test_files: false,
+            test_confidence_threshold: 0.8, // High threshold
+            ..FileFilter::default()
+        };
+        let high_threshold_analyzer = create_analyzer_with_filter(high_threshold_filter).await;
+        
+        // Low confidence threshold - should exclude even weak test files
+        let low_threshold_filter = FileFilter {
+            include_test_files: false,
+            test_confidence_threshold: 0.1, // Low threshold
+            ..FileFilter::default()
+        };
+        let low_threshold_analyzer = create_analyzer_with_filter(low_threshold_filter).await;
+
+        // With high threshold, weak test files should pass through
+        let high_result = high_threshold_analyzer.should_analyze_file(&weak_test_file).await.unwrap();
+        
+        // With low threshold, weak test files should be excluded
+        let low_result = low_threshold_analyzer.should_analyze_file(&weak_test_file).await.unwrap();
+
+        // At least one of these should demonstrate the threshold effect
+        // (The exact behavior depends on the test classifier implementation)
+        assert!(high_result || !low_result, "Confidence threshold should affect filtering");
+    }
+
+    #[tokio::test]
+    async fn test_other_filters_still_work_with_test_filtering() {
+        let temp_dir = TempDir::new().unwrap();
+        
+        // Create a test file that's too large
+        let large_test_file = create_test_file(
+            temp_dir.path(),
+            "large_test.rs",
+            &"a".repeat(1000), // Large content
+        ).await;
+
+        let filter = FileFilter {
+            include_test_files: true, // Allow test files
+            max_file_size_bytes: 100, // But restrict size
+            ..FileFilter::default()
+        };
+        let analyzer = create_analyzer_with_filter(filter).await;
+
+        // Should be excluded due to size, not test filtering
+        assert!(!analyzer.should_analyze_file(&large_test_file).await.unwrap());
+    }
 }

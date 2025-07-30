@@ -1,8 +1,8 @@
-name: "Python Bullshit Detection Patterns"
+name: "Python Misalignment Detection Patterns"
 version: "1.0.0"
 language: "python"
 author: "Sniff Core Team"
-description: "Comprehensive bullshit detection patterns for Python code"
+description: "Comprehensive misalignment detection patterns for Python code"
 
 rules:
   - id: "python_not_implemented_error"
@@ -124,6 +124,133 @@ rules:
       - "return 42  # For now"
       - "value = []  # Temporary placeholder"
       - "DEFAULT = \"dummy\"  # Hardcoded for now"
+    false_positives: []
+
+  - id: "python_premature_return_none"
+    name: "Premature Return None"
+    description: "Function returns None without doing actual work"
+    severity: "High"
+    pattern_type: !Regex
+      pattern: "return\\s+None\\s*(?:#.*(?:for now|temporary|placeholder|stub)|$)"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["premature_return", "fake_success", "ai_patterns"]
+    examples:
+      - "return None  # For now"
+      - "return None  # Placeholder"
+      - "return None  # Temporary implementation"
+    false_positives: []
+
+  - id: "python_fake_authentication"
+    name: "Fake Authentication Logic"
+    description: "Authentication that always returns True or uses placeholder logic"
+    severity: "Critical"
+    pattern_type: !Regex
+      pattern: "(?:authenticate|verify|check|validate).*(?:return\\s+True|True\\s*(?:#.*(?:for now|temporary|placeholder|fake)|$))"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["security", "authentication", "fake_logic", "ai_patterns"]
+    examples:
+      - "def authenticate(): return True  # For now"
+      - "return True  # Placeholder auth"
+      - "authenticated = True  # Fake validation"
+    false_positives: []
+
+  - id: "python_sleep_as_implementation"
+    name: "Sleep as Implementation"
+    description: "Using time.sleep instead of actual implementation"
+    severity: "High"
+    pattern_type: !Regex
+      pattern: "(?:time\\.sleep|sleep)\\s*\\([^)]+\\)\\s*(?:#.*(?:simulate|mock|fake|placeholder|for now)|$)"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["fake_async", "sleep", "placeholder", "ai_patterns"]
+    examples:
+      - "time.sleep(1)  # Simulate work"
+      - "sleep(0.5)  # Placeholder for processing"
+      - "await asyncio.sleep(2)  # Mock async work"
+    false_positives: []
+
+  - id: "python_error_suppression"
+    name: "Silent Error Suppression"
+    description: "Catching exceptions and ignoring them"
+    severity: "High"
+    pattern_type: !Regex
+      pattern: "except[^:]*:\\s*(?:pass|continue|return\\s*(?:None|False|\\[\\]|\\{\\})?)"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["error_handling", "suppression", "ai_patterns"]
+    examples:
+      - "except Exception: pass"
+      - "except: return None"
+      - "except ValueError: continue"
+    false_positives: []
+
+  - id: "python_mock_data_return"
+    name: "Mock Data Return"
+    description: "Functions returning hardcoded mock/test data"
+    severity: "Medium"
+    pattern_type: !Regex
+      pattern: "return\\s+(?:\\[.*\\]|\\{.*\\}|\"[^\"]*(?:test|mock|fake|sample|dummy)[^\"]*\"|\\d+)\\s*(?:#.*(?:mock|fake|test|sample|dummy|placeholder)|$)"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["mock_data", "fake_return", "ai_patterns"]
+    examples:
+      - "return [1, 2, 3]  # Mock data"
+      - "return \"test_user\"  # Placeholder"
+      - "return 0  # Dummy value"
+    false_positives: []
+
+  - id: "python_generic_error_messages"
+    name: "Generic Error Messages"
+    description: "Non-descriptive error messages that don't help debugging"
+    severity: "Medium"
+    pattern_type: !Regex
+      pattern: "(?:raise|Exception|Error)\\s*\\(\\s*[\"'](?:error|failed|something went wrong|oops|todo|fixme)[\"']\\s*\\)"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["error_handling", "generic", "unhelpful", "ai_patterns"]
+    examples:
+      - "raise Exception(\"error\")"
+      - "return ValueError(\"failed\")"
+      - "raise RuntimeError(\"something went wrong\")"
+    false_positives: []
+
+  - id: "python_assert_false_placeholder"
+    name: "Assert False Placeholder"
+    description: "Using assert False as placeholder implementation"
+    severity: "High"
+    pattern_type: !Regex
+      pattern: "assert\\s+False\\s*(?:,\\s*[\"'][^\"']*(?:TODO|FIXME|placeholder|for now|temporary)[^\"']*[\"'])?\\s*(?:#.*(?:TODO|FIXME|placeholder|for now|temporary)|$)"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["assert", "placeholder", "todo", "ai_patterns"]
+    examples:
+      - "assert False  # TODO: implement this"
+      - "assert False, \"Fix this later\""
+      - "assert False  # placeholder implementation"
+    false_positives: []
+
+  - id: "python_copy_paste_patterns"
+    name: "Copy-Paste Code Patterns"
+    description: "Repeated code blocks without abstraction"
+    severity: "Low"
+    pattern_type: !Regex
+      pattern: "(?:#\\s*(?:same as above|copy of|duplicate|repeated|clone))"
+      flags: "i"
+    scope: "Comments"
+    enabled: true
+    tags: ["duplication", "copy_paste", "ai_patterns"]
+    examples:
+      - "# Same as above function"
+      - "# Copy of the previous implementation"
+      - "# Duplicate logic - should refactor"
     false_positives: []
 
 metadata:

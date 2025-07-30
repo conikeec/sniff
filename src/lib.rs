@@ -41,14 +41,15 @@ pub mod standalone;
 pub mod storage;
 pub mod tree;
 pub mod types;
+pub mod verify_todo;
 pub mod watcher;
 
 // Re-export commonly used types
 pub use analysis::{
-    BullshitAnalyzer, BullshitDetection, ContextLines, EnhancedBullshitAnalysis, PerformanceImpact,
+    MisalignmentAnalyzer, MisalignmentDetection, ContextLines, EnhancedMisalignmentAnalysis, PerformanceImpact,
     QualityAssessment, SemanticContextResult, SupportedLanguage,
 };
-pub use display::BullshitDisplayFormatter;
+pub use display::MisalignmentDisplayFormatter;
 pub use error::{Result, SniffError};
 pub use pattern_learning::{
     LearnedPattern, LearningConfig, PatternCreationRequest, PatternCreationResponse,

@@ -1,8 +1,8 @@
-name: "Rust Bullshit Detection Patterns"
+name: "Rust Misalignment Detection Patterns"
 version: "1.0.0"
 language: "rust"
 author: "Sniff Core Team"
-description: "Comprehensive bullshit detection patterns for Rust code"
+description: "Comprehensive misalignment detection patterns for Rust code"
 
 rules:
   - id: "rust_unimplemented_macro"
@@ -111,6 +111,149 @@ rules:
     examples:
       - "dbg!(variable);"
       - "let result = dbg!(computation());"
+    false_positives: []
+
+  - id: "rust_premature_ok_return"
+    name: "Premature Ok Return"
+    description: "Function returns Ok() without doing actual work"
+    severity: "High"
+    pattern_type: !Regex
+      pattern: "Ok\\(\\(\\)\\)\\s*//.*(?:for now|temporary|placeholder|stub)"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["premature_return", "fake_success", "ai_patterns"]
+    examples:
+      - "Ok(()) // For now"
+      - "return Ok(()); // Placeholder"
+      - "Ok(default_value) // Temporary"
+    false_positives: []
+
+  - id: "rust_fake_authentication"
+    name: "Fake Authentication Logic"
+    description: "Authentication that always returns true or uses placeholder logic"
+    severity: "Critical"
+    pattern_type: !Regex
+      pattern: "(?:authenticate|verify|check|validate).*(?:return\\s+true|Ok\\(true\\)|true\\s*(?://.*(?:for now|temporary|placeholder|fake)|;|$))"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["security", "authentication", "fake_logic", "ai_patterns"]
+    examples:
+      - "fn authenticate() -> bool { true } // For now"
+      - "return true; // Placeholder auth"
+      - "Ok(true) // Fake validation"
+    false_positives: []
+
+  - id: "rust_sleep_as_implementation"
+    name: "Sleep as Implementation"
+    description: "Using sleep/delay instead of actual implementation"
+    severity: "High"
+    pattern_type: !Regex
+      pattern: "(?:sleep|Sleep|delay|Delay)\\s*\\([^)]+\\)\\s*(?://.*(?:simulate|mock|fake|placeholder|for now)|;)"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["fake_async", "sleep", "placeholder", "ai_patterns"]
+    examples:
+      - "sleep(Duration::from_secs(1)); // Simulate work"
+      - "thread::sleep(time); // Placeholder for processing"
+      - "tokio::time::sleep(dur).await; // Mock async work"
+    false_positives: []
+
+  - id: "rust_error_suppression"
+    name: "Silent Error Suppression"
+    description: "Ignoring errors with underscore or empty match arms"
+    severity: "High"
+    pattern_type: !Regex
+      pattern: "(?:\\.map_err\\(\\|_\\|[^)]*\\)|Err\\(_\\)\\s*=>\\s*\\{\\s*\\}|Err\\(_\\)\\s*=>\\s*\\(\\)|\\|_\\|\\s*\\{\\s*\\})"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["error_handling", "suppression", "ai_patterns"]
+    examples:
+      - "result.map_err(|_| ())"
+      - "Err(_) => {}"
+      - "match result { Ok(v) => v, Err(_) => default }"
+    false_positives: []
+
+  - id: "rust_mock_data_return"
+    name: "Mock Data Return"
+    description: "Functions returning hardcoded mock/test data"
+    severity: "Medium"
+    pattern_type: !Regex
+      pattern: "return\\s+(?:vec!\\[.*\\]|Vec::new\\(\\)|String::from\\(\"[^\"]*(?:test|mock|fake|sample|dummy)[^\"]*\"\\)|\\d+)\\s*(?://.*(?:mock|fake|test|sample|dummy|placeholder)|;)"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["mock_data", "fake_return", "ai_patterns"]
+    examples:
+      - "return vec![1, 2, 3]; // Mock data"
+      - "String::from(\"test_user\") // Placeholder"
+      - "return 0; // Dummy value"
+    false_positives: []
+
+  - id: "rust_generic_error_messages"
+    name: "Generic Error Messages"
+    description: "Non-descriptive error messages that don't help debugging"
+    severity: "Medium"
+    pattern_type: !Regex
+      pattern: "(?:Error|Err)\\s*\\(\\s*[\"'](?:error|failed|something went wrong|oops|todo|fixme)[\"']\\s*\\)"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["error_handling", "generic", "unhelpful", "ai_patterns"]
+    examples:
+      - "Err(\"error\")"
+      - "return Err(\"failed\");"
+      - "Error(\"something went wrong\")"
+    false_positives: []
+
+  - id: "rust_expect_with_todo"
+    name: "Expect with TODO Message"
+    description: "Using expect() with TODO or placeholder messages"
+    severity: "Medium"
+    pattern_type: !Regex
+      pattern: "\\.expect\\s*\\(\\s*[\"'][^\"']*(?:TODO|FIXME|placeholder|for now|temporary)[^\"']*[\"']\\s*\\)"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["error_handling", "expect", "todo", "ai_patterns"]
+    examples:
+      - "result.expect(\"TODO: handle this error\")"
+      - "value.expect(\"Fix this later\")"
+      - "data.expect(\"placeholder error message\")"
+    false_positives: []
+
+  - id: "rust_default_trait_abuse"
+    name: "Default Trait Abuse"
+    description: "Using Default::default() as lazy implementation"
+    severity: "Medium"
+    pattern_type: !Regex
+      pattern: "(?:return\\s+)?(?:[A-Z]\\w*::)?default\\(\\)\\s*(?://.*(?:for now|temporary|placeholder|lazy)|;|$)"
+      flags: "i"
+    scope: "FunctionBody"
+    enabled: true
+    tags: ["default", "lazy", "placeholder", "ai_patterns"]
+    examples:
+      - "return Config::default(); // For now"
+      - "default() // Placeholder implementation"
+      - "Self::default() // Temporary"
+    false_positives: []
+
+  - id: "rust_copy_paste_patterns"
+    name: "Copy-Paste Code Patterns"
+    description: "Repeated code blocks without abstraction"
+    severity: "Low"
+    pattern_type: !Regex
+      pattern: "(?://\\s*(?:same as above|copy of|duplicate|repeated|clone))"
+      flags: "i"
+    scope: "Comments"
+    enabled: true
+    tags: ["duplication", "copy_paste", "ai_patterns"]
+    examples:
+      - "// Same as above function"
+      - "// Copy of the previous implementation"
+      - "// Duplicate logic - should refactor"
     false_positives: []
 
 metadata:

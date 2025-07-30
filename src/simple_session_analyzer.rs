@@ -3,8 +3,8 @@
 
 //! Simple, working session analyzer that uses only verified components.
 
-use crate::analysis::{BullshitAnalyzer, BullshitDetection};
-use crate::display::BullshitDisplayFormatter;
+use crate::analysis::{MisalignmentAnalyzer, MisalignmentDetection};
+use crate::display::MisalignmentDisplayFormatter;
 use crate::error::Result;
 use crate::jsonl::JsonlParser;
 use crate::operations::Operation;
@@ -23,7 +23,7 @@ pub struct SimpleSessionAnalysis {
     /// File operations performed
     pub file_operations: Vec<Operation>,
     /// Bullshit patterns detected in modified files
-    pub bullshit_detections: Vec<crate::analysis::BullshitDetection>,
+    pub misalignment_detections: Vec<crate::analysis::MisalignmentDetection>,
     /// Simple metrics
     pub metrics: SimpleMetrics,
     /// Recommendations based on actual findings
@@ -35,8 +35,8 @@ pub struct SimpleSessionAnalysis {
 pub struct SimpleMetrics {
     /// Number of files modified
     pub files_modified: usize,
-    /// Total bullshit patterns detected
-    pub total_bullshit_patterns: usize,
+    /// Total misalignment patterns detected
+    pub total_misalignment_patterns: usize,
     /// Critical patterns (unimplemented, panic, etc.)
     pub critical_patterns: usize,
     /// Files with critical issues
@@ -52,19 +52,19 @@ pub struct SimpleSessionAnalyzer {
     /// Operation extractor
     operation_extractor: OperationExtractor,
     /// Bullshit analyzer
-    bullshit_analyzer: BullshitAnalyzer,
+    misalignment_analyzer: MisalignmentAnalyzer,
     /// Display formatter for enhanced output
-    display_formatter: BullshitDisplayFormatter,
+    display_formatter: MisalignmentDisplayFormatter,
     /// Whether to suppress terminal output (for clean format export)
     quiet_mode: bool,
 }
 
 impl SimpleSessionAnalyzer {
-    /// Analyzes multiple files in parallel using the bullshit analyzer.
-    fn analyze_files_parallel(&mut self, file_paths: &[PathBuf]) -> Result<Vec<BullshitDetection>> {
+    /// Analyzes multiple files in parallel using the misalignment analyzer.
+    fn analyze_files_parallel(&mut self, file_paths: &[PathBuf]) -> Result<Vec<MisalignmentDetection>> {
         // Convert PathBuf to &Path for the analyzer
         let path_refs: Vec<&Path> = file_paths.iter().map(std::path::PathBuf::as_path).collect();
-        self.bullshit_analyzer.analyze_files_parallel(&path_refs)
+        self.misalignment_analyzer.analyze_files_parallel(&path_refs)
     }
 
     /// Creates a new simple session analyzer.
@@ -77,47 +77,47 @@ impl SimpleSessionAnalyzer {
         let sniff_dir = current_dir.join(".sniff");
         let playbook_dir = std::path::Path::new("playbooks");
 
-        let bullshit_analyzer = if sniff_dir.exists() {
+        let misalignment_analyzer = if sniff_dir.exists() {
             // Use learned patterns from .sniff folder (highest priority)
-            match BullshitAnalyzer::new_with_learned_patterns(&current_dir) {
+            match MisalignmentAnalyzer::new_with_learned_patterns(&current_dir) {
                 Ok(analyzer) => analyzer,
                 Err(e) => {
                     eprintln!("Warning: Failed to load learned patterns: {e}");
                     // Fallback to enhanced playbooks if available
                     if playbook_dir.exists() {
-                        let mut analyzer = BullshitAnalyzer::new_without_defaults()?;
+                        let mut analyzer = MisalignmentAnalyzer::new_without_defaults()?;
                         if let Err(e) = analyzer.load_playbooks(playbook_dir) {
                             eprintln!("Warning: Failed to load enhanced playbooks: {e}");
-                            BullshitAnalyzer::new()?
+                            MisalignmentAnalyzer::new()?
                         } else {
                             analyzer
                         }
                     } else {
-                        BullshitAnalyzer::new()?
+                        MisalignmentAnalyzer::new()?
                     }
                 }
             }
         } else if playbook_dir.exists() {
             // Use enhanced playbooks only (no defaults to avoid duplicates)
-            let mut analyzer = BullshitAnalyzer::new_without_defaults()?;
+            let mut analyzer = MisalignmentAnalyzer::new_without_defaults()?;
             if let Err(e) = analyzer.load_playbooks(playbook_dir) {
                 eprintln!("Warning: Failed to load enhanced playbooks: {e}");
                 // Fallback to default analyzer if enhanced loading fails
-                BullshitAnalyzer::new()?
+                MisalignmentAnalyzer::new()?
             } else {
                 analyzer
             }
         } else {
             // Use default playbooks when no enhanced playbooks or learned patterns available
-            BullshitAnalyzer::new()?
+            MisalignmentAnalyzer::new()?
         };
 
-        let display_formatter = BullshitDisplayFormatter::new();
+        let display_formatter = MisalignmentDisplayFormatter::new();
 
         Ok(Self {
             jsonl_parser,
             operation_extractor,
-            bullshit_analyzer,
+            misalignment_analyzer,
             display_formatter,
             quiet_mode: false,
         })
@@ -133,9 +133,9 @@ impl SimpleSessionAnalyzer {
         let sniff_dir = current_dir.join(".sniff");
         let playbook_dir = std::path::Path::new("playbooks");
 
-        let bullshit_analyzer = if sniff_dir.exists() {
+        let misalignment_analyzer = if sniff_dir.exists() {
             // Use learned patterns from .sniff folder (highest priority)
-            match BullshitAnalyzer::new_with_learned_patterns(&current_dir) {
+            match MisalignmentAnalyzer::new_with_learned_patterns(&current_dir) {
                 Ok(analyzer) => analyzer,
                 Err(e) => {
                     if !cfg!(test) {
@@ -143,44 +143,44 @@ impl SimpleSessionAnalyzer {
                     }
                     // Fallback to enhanced playbooks if available
                     if playbook_dir.exists() {
-                        let mut analyzer = BullshitAnalyzer::new_without_defaults()?;
+                        let mut analyzer = MisalignmentAnalyzer::new_without_defaults()?;
                         if let Err(e) = analyzer.load_playbooks(playbook_dir) {
                             if !cfg!(test) {
                                 eprintln!("Warning: Failed to load enhanced playbooks: {e}");
                             }
-                            BullshitAnalyzer::new()?
+                            MisalignmentAnalyzer::new()?
                         } else {
                             analyzer
                         }
                     } else {
-                        BullshitAnalyzer::new()?
+                        MisalignmentAnalyzer::new()?
                     }
                 }
             }
         } else if playbook_dir.exists() {
             // Use enhanced playbooks only (no defaults to avoid duplicates)
-            let mut analyzer = BullshitAnalyzer::new_without_defaults()?;
+            let mut analyzer = MisalignmentAnalyzer::new_without_defaults()?;
             if let Err(e) = analyzer.load_playbooks(playbook_dir) {
                 if !cfg!(test) {
                     // Don't print warnings during tests
                     eprintln!("Warning: Failed to load enhanced playbooks: {e}");
                 }
                 // Fallback to default analyzer if enhanced loading fails
-                BullshitAnalyzer::new()?
+                MisalignmentAnalyzer::new()?
             } else {
                 analyzer
             }
         } else {
             // Use default playbooks when no enhanced playbooks or learned patterns available
-            BullshitAnalyzer::new()?
+            MisalignmentAnalyzer::new()?
         };
 
-        let display_formatter = BullshitDisplayFormatter::new();
+        let display_formatter = MisalignmentDisplayFormatter::new();
 
         Ok(Self {
             jsonl_parser,
             operation_extractor,
-            bullshit_analyzer,
+            misalignment_analyzer,
             display_formatter,
             quiet_mode: true,
         })
@@ -338,7 +338,7 @@ impl SimpleSessionAnalyzer {
                         }
                     };
 
-                    match self.bullshit_analyzer.analyze_file(&absolute_path) {
+                    match self.misalignment_analyzer.analyze_file(&absolute_path) {
                         Ok(detections) => {
                             files_analyzed += 1;
 
@@ -376,12 +376,12 @@ impl SimpleSessionAnalyzer {
             println!("📊 Analysis Summary:");
             println!("   Files found and analyzed: {files_analyzed}");
             println!("   Files missing/removed: {}", files_missing.len());
-            println!("   Total bullshit patterns: {}", all_detections.len());
+            println!("   Total misalignment patterns: {}", all_detections.len());
 
             // If many files with issues, show a compact tree summary
             if existing_files.len() > 5 && !all_detections.is_empty() {
                 println!("\n📋 Issues Overview:");
-                let file_summaries: Vec<(String, Vec<BullshitDetection>)> = existing_files
+                let file_summaries: Vec<(String, Vec<MisalignmentDetection>)> = existing_files
                     .iter()
                     .map(|file_path| {
                         let file_detections: Vec<_> = all_detections
@@ -416,7 +416,7 @@ impl SimpleSessionAnalyzer {
             session_id,
             modified_files: existing_files, // Only include files that actually exist
             file_operations: all_operations,
-            bullshit_detections: all_detections,
+            misalignment_detections: all_detections,
             metrics,
             recommendations,
         })
@@ -476,12 +476,12 @@ impl SimpleSessionAnalyzer {
     fn calculate_metrics(
         &self,
         files: &[String],
-        detections: &[crate::analysis::BullshitDetection],
+        detections: &[crate::analysis::MisalignmentDetection],
         files_analyzed: usize,
         files_missing: &[String],
     ) -> SimpleMetrics {
         let files_modified = files.len();
-        let total_bullshit_patterns = detections.len();
+        let total_misalignment_patterns = detections.len();
 
         let critical_patterns = detections
             .iter()
@@ -507,14 +507,14 @@ impl SimpleSessionAnalyzer {
             // Only calculate quality for files we actually analyzed
             let base_score = 100.0;
             let pattern_deduction =
-                (critical_patterns as f64 * 20.0) + (total_bullshit_patterns as f64 * 5.0);
+                (critical_patterns as f64 * 20.0) + (total_misalignment_patterns as f64 * 5.0);
             let missing_file_penalty = files_missing.len() as f64 * 10.0; // Penalty for missing files
             (base_score - pattern_deduction - missing_file_penalty).max(0.0)
         };
 
         SimpleMetrics {
             files_modified,
-            total_bullshit_patterns,
+            total_misalignment_patterns,
             critical_patterns,
             files_with_critical_issues,
             quality_score,
@@ -524,7 +524,7 @@ impl SimpleSessionAnalyzer {
     /// Generates simple, actionable recommendations.
     fn generate_recommendations(
         &self,
-        detections: &[crate::analysis::BullshitDetection],
+        detections: &[crate::analysis::MisalignmentDetection],
         files_analyzed: usize,
         files_missing: &[String],
     ) -> Vec<String> {
@@ -556,7 +556,7 @@ impl SimpleSessionAnalyzer {
 
         if detections.is_empty() && files_analyzed > 0 {
             recommendations.push(format!(
-                "✅ No bullshit patterns detected in {files_analyzed} analyzed files!"
+                "✅ No misalignment patterns detected in {files_analyzed} analyzed files!"
             ));
             if !files_missing.is_empty() {
                 recommendations

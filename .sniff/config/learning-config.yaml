@@ -1,5 +1,0 @@
-min_confidence: 0.75
-max_patterns_per_language: 100
-auto_validate: true
-pattern_expiry_days: 30
-learning_rate: 1.0
