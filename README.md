@@ -480,9 +480,3 @@ The pattern playbooks in `playbooks/` are the core of Sniff's detection capabili
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
-
-## Documentation
-
-- [Integration Guide](integrations/README.md)
-- [Pattern Development](docs/patterns.md)
-- [Architecture Overview](docs/architecture.md)
