@@ -52,6 +52,20 @@ Code Files → AST (Syntax Tree) Analysis → Pattern Detection → Quality Repo
 
 ## Installation
 
+### Homebrew (macOS/Linux)
+
+```bash
+# Add the tap
+brew tap conikeec/tap
+
+# Install sniff
+brew install sniff
+
+# Verify installation
+sniff --version
+```
+
+### Local (rust env)
 ```bash
 # Build from source
 git clone https://github.com/conikeec/sniff
